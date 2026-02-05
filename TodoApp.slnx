@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="TodoApp.Application/TodoApp.Application.csproj" Id="ea9c5ce8-8df7-4208-b464-d37b32c24acf" />
+  <Project Path="TodoApp.Domain/TodoApp.Domain.csproj" Id="d7655db9-4523-4642-b177-c214fad55a1e" />
+  <Project Path="TodoApp.Infrastructure/TodoApp.Infrastructure.csproj" Id="9107ac97-7111-4d31-a9cd-97861eff74ff" />
+  <Project Path="TodoApp.WebApi/TodoApp.WebApi.csproj" Id="6c3736be-7191-44c6-bf37-70fc442363e5" />
+</Solution>
