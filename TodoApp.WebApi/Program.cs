@@ -7,18 +7,20 @@ using TodoApp.Application.Interfaces.Common;
 using TodoApp.Application.Interfaces.Persistence;
 using TodoApp.Application.Interfaces.Security;
 using TodoApp.Application.Services.Auth;
+using TodoApp.Application.Services.Todo;
 using TodoApp.Infrastructure.Persistence;
 using TodoApp.Infrastructure.Persistence.Repositories;
 using TodoApp.Infrastructure.Security;
 using TodoApp.WebApi.Services;
+using TodoApp.WebApi.Middlewares; // Middleware klasörünü eklemeyi unutma!
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. VERÝTABANI BAÐLANTISI (EF CORE)
+// --- 1. VERÝTABANI BAÐLANTISI (EF CORE) ---
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// 2. GÜVENLÝK VE JWT AYARLARI
+// --- 2. GÜVENLÝK VE JWT AYARLARI ---
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -40,26 +42,41 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-// 3. DEPENDENCY INJECTION (Kablolarý Baðlama)
-builder.Services.AddHttpContextAccessor(); // CurrentUserService için þart!
+// --- 3. CORS AYARLARI (Angular/Faz 6 Hazýrlýðý) ---
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
 
-// Interfaces -> Implementations
+// --- 4. DEPENDENCY INJECTION (Kablolarý Baðlama) ---
+builder.Services.AddHttpContextAccessor(); // CurrentUserService için zorunlu
+
+// Auth Katmaný
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
+// Todo Katmaný
+builder.Services.AddScoped<ITodoRepository, TodoRepository>();
+builder.Services.AddScoped<ITodoService, TodoService>();
+
 builder.Services.AddControllers();
 
-// 4. SWAGGER AYARLARI (JWT DESTEKLÝ)
+// --- 5. SWAGGER AYARLARI (JWT DESTEKLÝ) ---
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "TodoApp API", Version = "v1" });
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Description = "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
+        Description = "JWT Authorization header using the Bearer scheme. Örn: \"Bearer {token}\"",
         Name = "Authorization",
         In = ParameterLocation.Header,
         Type = SecuritySchemeType.ApiKey,
@@ -76,16 +93,22 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// 5. HTTP REQUEST PIPELINE (Sýralama Çok Önemli!)
+// --- 6. HTTP REQUEST PIPELINE (Sýralama Hayatidir!) ---
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
+// Global Hata Yakalayýcý (500 hatalarýný 401/400'e çevirir)
+app.UseMiddleware<ExceptionMiddleware>();
+
 app.UseHttpsRedirection();
 
-// Önce kimlik doðrula (Bilet kontrolü), sonra yetki ver (Giriþ izni)!
+// CORS Politikasýný Uygula
+app.UseCors("AllowAll");
+
+// Kimlik Doðrulama ve Yetkilendirme
 app.UseAuthentication();
 app.UseAuthorization();
 
