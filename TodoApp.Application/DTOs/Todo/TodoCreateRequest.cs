@@ -6,4 +6,5 @@ using System.Threading.Tasks;
 
 namespace TodoApp.Application.DTOs.Todo;
 
-public record TodoCreateRequest(string Title, string? Description);
+
+public record TodoCreateRequest(string Title, string? Description, DateTime? DueDate);

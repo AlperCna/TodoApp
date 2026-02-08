@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.VisualBasic;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -32,6 +33,7 @@ public class TodoService : ITodoService
             Id = Guid.NewGuid(),
             Title = request.Title,
             Description = request.Description,
+            DueDate = request.DueDate, // 1. DEĞİŞİKLİK: Tarih bilgisini entity'ye aktarır [cite: 20, 26]
             UserId = userId,
             IsCompleted = false
         };
@@ -47,7 +49,6 @@ public class TodoService : ITodoService
         return todos.Select(MapToResponse);
     }
 
-    // HATA VEREN 1: GetByIdMineAsync
     public async Task<TodoResponse> GetByIdMineAsync(Guid id, CancellationToken ct)
     {
         var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
@@ -59,7 +60,6 @@ public class TodoService : ITodoService
         return MapToResponse(todo);
     }
 
-    // HATA VEREN 2: UpdateAsync
     public async Task<TodoResponse> UpdateAsync(Guid id, TodoUpdateRequest request, CancellationToken ct)
     {
         var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
@@ -71,12 +71,12 @@ public class TodoService : ITodoService
         todo.Title = request.Title;
         todo.Description = request.Description;
         todo.IsCompleted = request.IsCompleted;
+        todo.DueDate = request.DueDate; // 2. DEĞİŞİKLİK: Tarih güncellemesini veritabanı nesnesine yansıtır [cite: 26, 95]
 
         await _todoRepository.UpdateAsync(todo, ct);
         return MapToResponse(todo);
     }
 
-    // HATA VEREN 3: DeleteAsync
     public async Task DeleteAsync(Guid id, CancellationToken ct)
     {
         var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
@@ -102,5 +102,11 @@ public class TodoService : ITodoService
     }
 
     private static TodoResponse MapToResponse(TodoItem todo)
-        => new(todo.Id, todo.Title, todo.Description, todo.IsCompleted, todo.CreatedAt);
+        => new(
+            todo.Id,
+            todo.Title,
+            todo.Description,
+            todo.IsCompleted,
+            todo.CreatedAt,
+            todo.DueDate); // 3. DEĞİŞİKLİK: Veritabanından gelen tarihi Frontend'e giden pakete ekler [cite: 69, 74]
 }

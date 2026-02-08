@@ -17,7 +17,10 @@ public class CurrentUserService : ICurrentUserService
     {
         get
         {
+            // HttpContext üzerinden NameIdentifier claim'ini çekiyoruz
             var id = _httpContextAccessor.HttpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            // Eğer id boşsa null, doluysa Guid'e çevirip döndürüyoruz
             return string.IsNullOrEmpty(id) ? null : Guid.Parse(id);
         }
     }

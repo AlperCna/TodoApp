@@ -11,4 +11,5 @@ public record TodoResponse(
     string Title,
     string? Description,
     bool IsCompleted,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    DateTime? DueDate);

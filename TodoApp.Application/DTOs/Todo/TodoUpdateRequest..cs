@@ -6,4 +6,5 @@ using System.Threading.Tasks;
 
 namespace TodoApp.Application.DTOs.Todo;
 
-public record TodoUpdateRequest(string Title, string? Description, bool IsCompleted);
+
+public record TodoUpdateRequest(string Title, string? Description, bool IsCompleted, DateTime? DueDate);
