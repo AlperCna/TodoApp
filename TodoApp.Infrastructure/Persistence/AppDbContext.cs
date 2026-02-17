@@ -24,19 +24,25 @@ public class AppDbContext : DbContext
         // 1. USERS TABLOSU YAPILANDIRMASI
         modelBuilder.Entity<User>(b =>
         {
-            b.HasIndex(u => u.Email).IsUnique(); // Email benzersiz olmalı
+            b.HasIndex(u => u.Email).IsUnique();
 
             b.Property(u => u.Email).IsRequired().HasMaxLength(256);
             b.Property(u => u.UserName).IsRequired().HasMaxLength(100);
             b.Property(u => u.PasswordHash).IsRequired();
             b.Property(u => u.PasswordSalt).IsRequired();
-            
+
+            // MANUEL MIGRATION: Yeni eklenen Address alanı yapılandırması
+            b.Property(u => u.Address).HasMaxLength(500);
         });
 
         // 2. TODOITEMS TABLOSU YAPILANDIRMASI
         modelBuilder.Entity<TodoItem>(b =>
         {
             b.Property(t => t.Title).IsRequired().HasMaxLength(200);
+
+            // SOFT DELETE: Global Query Filter
+            // Bu satır sayesinde uygulama genelinde 'IsDeleted' olanlar asla gelmez.
+            b.HasQueryFilter(t => !t.IsDeleted);
 
             // İndeksler: Sorgu performansını artırır
             b.HasIndex(t => t.UserId);
@@ -46,7 +52,7 @@ public class AppDbContext : DbContext
             b.HasOne(t => t.User)
              .WithMany(u => u.TodoItems)
              .HasForeignKey(t => t.UserId)
-             .OnDelete(DeleteBehavior.Cascade); // Kullanıcı silinince Todo'ları da silinsin
+             .OnDelete(DeleteBehavior.Cascade);
         });
     }
 
@@ -58,10 +64,10 @@ public class AppDbContext : DbContext
             switch (entry.State)
             {
                 case EntityState.Added:
-                    entry.Entity.CreatedAt = DateTime.UtcNow; // Yeni kayıtta tarih ata
+                    entry.Entity.CreatedAt = DateTime.UtcNow;
                     break;
                 case EntityState.Modified:
-                    entry.Entity.UpdatedAt = DateTime.UtcNow; // Güncellemede tarihi yenile
+                    entry.Entity.UpdatedAt = DateTime.UtcNow;
                     break;
             }
         }

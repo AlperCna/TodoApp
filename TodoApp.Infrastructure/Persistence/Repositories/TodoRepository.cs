@@ -47,7 +47,12 @@ public class TodoRepository : ITodoRepository
 
     public async Task DeleteAsync(TodoItem todo, CancellationToken ct)
     {
-        _context.TodoItems.Remove(todo);
+        // Veriyi gerçekten silmiyoruz (Hard Delete iptal!)
+        todo.IsDeleted = true;
+        todo.DeletedAt = DateTime.UtcNow;
+
+        // Veriyi sadece güncelliyoruz
+        _context.TodoItems.Update(todo);
         await _context.SaveChangesAsync(ct);
     }
 }

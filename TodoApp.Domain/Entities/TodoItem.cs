@@ -17,6 +17,9 @@ public class TodoItem : BaseEntity
 
     public DateTime? DueDate { get; set; }
 
+    public bool IsDeleted { get; set; } = false; // Verinin silinme durumu
+    public DateTime? DeletedAt { get; set; }     // Ne zaman silindiği bilgisi
+
     // Navigation
     public User? User { get; set; }
 }
