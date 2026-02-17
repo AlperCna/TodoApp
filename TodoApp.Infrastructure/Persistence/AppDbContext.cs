@@ -30,6 +30,7 @@ public class AppDbContext : DbContext
             b.Property(u => u.UserName).IsRequired().HasMaxLength(100);
             b.Property(u => u.PasswordHash).IsRequired();
             b.Property(u => u.PasswordSalt).IsRequired();
+            
         });
 
         // 2. TODOITEMS TABLOSU YAPILANDIRMASI

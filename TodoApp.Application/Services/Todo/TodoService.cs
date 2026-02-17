@@ -33,7 +33,7 @@ public class TodoService : ITodoService
             Id = Guid.NewGuid(),
             Title = request.Title,
             Description = request.Description,
-            DueDate = request.DueDate, // 1. DEĞİŞİKLİK: Tarih bilgisini entity'ye aktarır [cite: 20, 26]
+            DueDate = request.DueDate, 
             UserId = userId,
             IsCompleted = false
         };
@@ -71,7 +71,7 @@ public class TodoService : ITodoService
         todo.Title = request.Title;
         todo.Description = request.Description;
         todo.IsCompleted = request.IsCompleted;
-        todo.DueDate = request.DueDate; // 2. DEĞİŞİKLİK: Tarih güncellemesini veritabanı nesnesine yansıtır [cite: 26, 95]
+        todo.DueDate = request.DueDate; 
 
         await _todoRepository.UpdateAsync(todo, ct);
         return MapToResponse(todo);
@@ -108,5 +108,5 @@ public class TodoService : ITodoService
             todo.Description,
             todo.IsCompleted,
             todo.CreatedAt,
-            todo.DueDate); // 3. DEĞİŞİKLİK: Veritabanından gelen tarihi Frontend'e giden pakete ekler [cite: 69, 74]
+            todo.DueDate); 
 }

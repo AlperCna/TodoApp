@@ -27,7 +27,7 @@ public class ExceptionMiddleware
     {
         context.Response.ContentType = "application/json";
 
-        // 1. Geliştirme: Hata tipine göre durum kodu ve mesaj eşleşmesi yapıyoruz
+      
         var (statusCode, message) = exception switch
         {
             // 401: Token yoksa veya geçersizse
@@ -48,13 +48,11 @@ public class ExceptionMiddleware
 
         context.Response.StatusCode = (int)statusCode;
 
-        // 2. Geliştirme: Daha profesyonel ve scannable bir response modeli
         var response = new
         {
             status = context.Response.StatusCode,
             message = message,
-            // Geliştirme aşamasında hatayı görmek için (opsiyonel):
-            // detail = exception.StackTrace 
+            
         };
 
         return context.Response.WriteAsync(JsonSerializer.Serialize(response));

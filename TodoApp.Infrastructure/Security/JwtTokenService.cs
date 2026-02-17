@@ -31,8 +31,7 @@ public class JwtTokenService : IJwtTokenService
         // Biletin içine kimlik bilgilerini (Claims) gömüyoruz
         var claims = new[]
 {
-    // JwtRegisteredClaimNames.Sub yerine ClaimTypes.NameIdentifier kullanıyoruz
-    // Bu, .NET'in kullanıcı kimliği için kullandığı resmi anahtardır.
+    
     new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
     new Claim(JwtRegisteredClaimNames.Email, user.Email),
     new Claim("username", user.UserName)

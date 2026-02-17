@@ -1,0 +1,4 @@
+USE [TodoAppDB];
+GO
+
+ALTER TABLE Users ADD Address NVARCHAR(500) NULL;

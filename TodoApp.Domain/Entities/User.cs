@@ -16,6 +16,8 @@ public class User : BaseEntity
     public string PasswordHash { get; set; } = default!;
     public string PasswordSalt { get; set; } = default!;
 
+    public string? Address { get; set; } 
+
     // Navigation
     public ICollection<TodoItem> TodoItems { get; set; } = new List<TodoItem>();
 }
