@@ -1,14 +1,12 @@
-﻿using Microsoft.VisualBasic;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
-
+using TodoApp.Application.DTOs.Common;
 using TodoApp.Application.DTOs.Todo;
 using TodoApp.Application.Interfaces.Common;
 using TodoApp.Application.Interfaces.Persistence;
-using TodoApp.Application.Services.Todo;
 using TodoApp.Domain.Entities;
 
 namespace TodoApp.Application.Services.Todo;
@@ -24,39 +22,46 @@ public class TodoService : ITodoService
         _currentUserService = currentUserService;
     }
 
-    public async Task<TodoResponse> CreateAsync(TodoCreateRequest request, CancellationToken ct)
+    // SAYFALAMA MANTIĞI BURADA GÜNCELLENDİ
+    public async Task<PaginatedResult<TodoResponse>> GetMyTodosAsync(int pageNumber, int pageSize, CancellationToken ct)
     {
         var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
 
+        // 1. Repository'den sayfalanmış ham veriyi çekiyoruz
+        var paginatedTodos = await _todoRepository.GetUserTodosAsync(userId, pageNumber, pageSize, ct);
+
+        // 2. İçindeki TodoItem'ları TodoResponse'a Map ediyoruz
+        var mappedItems = paginatedTodos.Items.Select(MapToResponse).ToList();
+
+        // 3. Yeni sayfalanmış sonucu TodoResponse tipiyle geri döndürüyoruz
+        return new PaginatedResult<TodoResponse>(
+            mappedItems,
+            paginatedTodos.TotalCount,
+            pageNumber,
+            pageSize);
+    }
+
+    public async Task<TodoResponse> CreateAsync(TodoCreateRequest request, CancellationToken ct)
+    {
+        var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
         var todo = new TodoItem
         {
             Id = Guid.NewGuid(),
             Title = request.Title,
             Description = request.Description,
-            DueDate = request.DueDate, 
+            DueDate = request.DueDate,
             UserId = userId,
             IsCompleted = false
         };
-
         await _todoRepository.AddAsync(todo, ct);
         return MapToResponse(todo);
-    }
-
-    public async Task<IEnumerable<TodoResponse>> GetMyTodosAsync(CancellationToken ct)
-    {
-        var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
-        var todos = await _todoRepository.GetUserTodosAsync(userId, ct);
-        return todos.Select(MapToResponse);
     }
 
     public async Task<TodoResponse> GetByIdMineAsync(Guid id, CancellationToken ct)
     {
         var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
         var todo = await _todoRepository.GetByIdAsync(id, ct);
-
-        if (todo == null || todo.UserId != userId)
-            throw new UnauthorizedAccessException("Yetkisiz erişim.");
-
+        if (todo == null || todo.UserId != userId) throw new UnauthorizedAccessException("Yetkisiz erişim.");
         return MapToResponse(todo);
     }
 
@@ -64,14 +69,12 @@ public class TodoService : ITodoService
     {
         var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
         var todo = await _todoRepository.GetByIdAsync(id, ct);
-
-        if (todo == null || todo.UserId != userId)
-            throw new UnauthorizedAccessException("Güncelleme yetkiniz yok.");
+        if (todo == null || todo.UserId != userId) throw new UnauthorizedAccessException("Güncelleme yetkiniz yok.");
 
         todo.Title = request.Title;
         todo.Description = request.Description;
         todo.IsCompleted = request.IsCompleted;
-        todo.DueDate = request.DueDate; 
+        todo.DueDate = request.DueDate;
 
         await _todoRepository.UpdateAsync(todo, ct);
         return MapToResponse(todo);
@@ -81,10 +84,7 @@ public class TodoService : ITodoService
     {
         var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
         var todo = await _todoRepository.GetByIdAsync(id, ct);
-
-        if (todo == null || todo.UserId != userId)
-            throw new UnauthorizedAccessException("Silme yetkiniz yok.");
-
+        if (todo == null || todo.UserId != userId) throw new UnauthorizedAccessException("Silme yetkiniz yok.");
         await _todoRepository.DeleteAsync(todo, ct);
     }
 
@@ -92,9 +92,7 @@ public class TodoService : ITodoService
     {
         var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
         var todo = await _todoRepository.GetByIdAsync(id, ct);
-
-        if (todo == null || todo.UserId != userId)
-            throw new UnauthorizedAccessException("İşlem yetkisiz.");
+        if (todo == null || todo.UserId != userId) throw new UnauthorizedAccessException("İşlem yetkisiz.");
 
         todo.IsCompleted = !todo.IsCompleted;
         await _todoRepository.UpdateAsync(todo, ct);
@@ -108,5 +106,5 @@ public class TodoService : ITodoService
             todo.Description,
             todo.IsCompleted,
             todo.CreatedAt,
-            todo.DueDate); 
+            todo.DueDate);
 }

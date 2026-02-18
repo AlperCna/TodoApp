@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
-
 using Microsoft.EntityFrameworkCore;
+using TodoApp.Application.DTOs.Common;
 using TodoApp.Application.Interfaces.Persistence;
 using TodoApp.Domain.Entities;
 
@@ -19,13 +19,25 @@ public class TodoRepository : ITodoRepository
         _context = context;
     }
 
-    // Sadece belirli bir kullanıcıya ait olan Todo'ları getirir
-    public async Task<IEnumerable<TodoItem>> GetUserTodosAsync(Guid userId, CancellationToken ct)
+    // Sayfalama mantığı buraya eklendi
+    public async Task<PaginatedResult<TodoItem>> GetUserTodosAsync(Guid userId, int pageNumber, int pageSize, CancellationToken ct)
     {
-        return await _context.TodoItems
+        // 1. Sorguyu hazırla (Filtreler ve sıralama)
+        var query = _context.TodoItems
             .Where(t => t.UserId == userId)
-            .OrderByDescending(t => t.CreatedAt)
+            .OrderByDescending(t => t.CreatedAt);
+
+        // 2. Toplam kayıt sayısını hesapla (Sayfalama için kritik)
+        var totalCount = await query.CountAsync(ct);
+
+        // 3. Skip ve Take ile verinin sadece ilgili parçasını çek
+        var items = await query
+            .Skip((pageNumber - 1) * pageSize) // Önceki sayfaları atla
+            .Take(pageSize)                    // Sadece istenen sayfa kadar al
             .ToListAsync(ct);
+
+        // 4. Sonucu PaginatedResult zarfı içinde döndür
+        return new PaginatedResult<TodoItem>(items, totalCount, pageNumber, pageSize);
     }
 
     public async Task<TodoItem?> GetByIdAsync(Guid id, CancellationToken ct)
@@ -47,11 +59,10 @@ public class TodoRepository : ITodoRepository
 
     public async Task DeleteAsync(TodoItem todo, CancellationToken ct)
     {
-        // Veriyi gerçekten silmiyoruz (Hard Delete iptal!)
+        // Soft Delete: Veriyi silmiyoruz, işaretliyoruz
         todo.IsDeleted = true;
         todo.DeletedAt = DateTime.UtcNow;
 
-        // Veriyi sadece güncelliyoruz
         _context.TodoItems.Update(todo);
         await _context.SaveChangesAsync(ct);
     }

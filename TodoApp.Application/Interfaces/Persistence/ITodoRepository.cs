@@ -1,27 +1,23 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
-
+using TodoApp.Application.DTOs.Common; // PaginatedResult burada
 using TodoApp.Domain.Entities;
 
 namespace TodoApp.Application.Interfaces.Persistence;
 
 public interface ITodoRepository
 {
-    // Belirli bir kullanıcıya ait tüm görevleri getirir
-    Task<IEnumerable<TodoItem>> GetUserTodosAsync(Guid userId, CancellationToken ct = default);
+    // Sayfalama için geri dönüş tipi PaginatedResult olarak güncellendi
+    // pageNumber ve pageSize parametreleri eklendi
+    Task<PaginatedResult<TodoItem>> GetUserTodosAsync(Guid userId, int pageNumber, int pageSize, CancellationToken ct = default);
 
-    // ID'ye göre tek bir görev getirir
     Task<TodoItem?> GetByIdAsync(Guid id, CancellationToken ct = default);
 
-    // Yeni görev ekler
     Task AddAsync(TodoItem todo, CancellationToken ct = default);
 
-    // Mevcut görevi günceller
     Task UpdateAsync(TodoItem todo, CancellationToken ct = default);
 
-    // Görevi siler
     Task DeleteAsync(TodoItem todo, CancellationToken ct = default);
 }

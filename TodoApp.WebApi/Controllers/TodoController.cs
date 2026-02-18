@@ -2,10 +2,11 @@
 using Microsoft.AspNetCore.Mvc;
 using TodoApp.Application.DTOs.Todo;
 using TodoApp.Application.Services.Todo;
+using TodoApp.Application.DTOs.Common; // PaginatedResult için gerekli
 
 namespace TodoApp.WebApi.Controllers;
 
-[Authorize] // 4.2 Kritik Kural: Sadece giriş yapanlar erişebilir
+[Authorize] // Sadece giriş yapmış kullanıcılar erişebilir
 [ApiController]
 [Route("api/[controller]")]
 public class TodoController : ControllerBase
@@ -17,35 +18,47 @@ public class TodoController : ControllerBase
         _todoService = todoService;
     }
 
-    [HttpGet] // GET api/todos
-    public async Task<IActionResult> GetMyTodos(CancellationToken ct)
+    /// <summary>
+    /// Kullanıcının görevlerini sayfalı olarak getirir.
+    /// Örn: GET api/todo?pageNumber=1&pageSize=10
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> GetMyTodos(
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 10,
+        CancellationToken ct = default)
     {
-        var result = await _todoService.GetMyTodosAsync(ct);
+        // Sayfalama parametrelerini servise iletiyoruz
+        var result = await _todoService.GetMyTodosAsync(pageNumber, pageSize, ct);
+
+        // Dönen result artık sadece liste değil; Items, TotalCount ve Page bilgilerini içerir.
         return Ok(result);
     }
 
-    [HttpPost] // POST api/todos
+    [HttpPost] // POST api/todo
     public async Task<IActionResult> Create(TodoCreateRequest request, CancellationToken ct)
     {
         var result = await _todoService.CreateAsync(request, ct);
         return Ok(result);
     }
 
-    [HttpPut("{id}")] // PUT api/todos/{id}
+    [HttpPut("{id}")] // PUT api/todo/{id}
     public async Task<IActionResult> Update(Guid id, TodoUpdateRequest request, CancellationToken ct)
     {
         var result = await _todoService.UpdateAsync(id, request, ct);
         return Ok(result);
     }
 
-    [HttpDelete("{id}")] // DELETE api/todos/{id}
+    [HttpDelete("{id}")] // DELETE api/todo/{id}
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
+        // Repository'de yaptığımız Soft Delete değişikliği sayesinde bu metot 
+        // veriyi DB'den silmez, sadece IsDeleted=1 olarak işaretler.
         await _todoService.DeleteAsync(id, ct);
         return NoContent();
     }
 
-    [HttpPatch("{id}/toggle")] // PATCH api/todos/{id}/toggle
+    [HttpPatch("{id}/toggle")] // PATCH api/todo/{id}/toggle
     public async Task<IActionResult> Toggle(Guid id, CancellationToken ct)
     {
         var result = await _todoService.ToggleCompleteAsync(id, ct);
