@@ -10,10 +10,14 @@ namespace TodoApp.Application.Services.Todo;
 public interface ITodoService
 {
     Task<TodoResponse> CreateAsync(TodoCreateRequest request, CancellationToken ct = default);
-    
-    // HATA BURADAYDI: Dönüş tipini PaginatedResult yaptık ve parametreleri ekledik
-    Task<PaginatedResult<TodoResponse>> GetMyTodosAsync(int pageNumber, int pageSize, CancellationToken ct = default);
-    
+
+    // GÜNCELLENEN KISIM: 'search' parametresi eklendi
+    Task<PaginatedResult<TodoResponse>> GetMyTodosAsync(
+        int pageNumber,
+        int pageSize,
+        string? search = null,
+        CancellationToken ct = default);
+
     Task<TodoResponse> GetByIdMineAsync(Guid id, CancellationToken ct = default);
     Task<TodoResponse> UpdateAsync(Guid id, TodoUpdateRequest request, CancellationToken ct = default);
     Task DeleteAsync(Guid id, CancellationToken ct = default);

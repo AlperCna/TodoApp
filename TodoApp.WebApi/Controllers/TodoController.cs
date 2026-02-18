@@ -19,19 +19,20 @@ public class TodoController : ControllerBase
     }
 
     /// <summary>
-    /// Kullanıcının görevlerini sayfalı olarak getirir.
-    /// Örn: GET api/todo?pageNumber=1&pageSize=10
+    /// Kullanıcının görevlerini sayfalı ve aramalı olarak getirir.
+    /// Örn: GET api/todo?search=deneme&pageNumber=1&pageSize=10
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetMyTodos(
+        [FromQuery] string? search = null, // YENİ: Arama parametresi eklendi
         [FromQuery] int pageNumber = 1,
         [FromQuery] int pageSize = 10,
         CancellationToken ct = default)
     {
-        // Sayfalama parametrelerini servise iletiyoruz
-        var result = await _todoService.GetMyTodosAsync(pageNumber, pageSize, ct);
+        // YENİ: search parametresi artık servise iletiliyor
+        var result = await _todoService.GetMyTodosAsync(pageNumber, pageSize, search, ct);
 
-        // Dönen result artık sadece liste değil; Items, TotalCount ve Page bilgilerini içerir.
+        // Dönen result: Items, TotalCount ve Page bilgilerini içerir.
         return Ok(result);
     }
 
@@ -52,8 +53,7 @@ public class TodoController : ControllerBase
     [HttpDelete("{id}")] // DELETE api/todo/{id}
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        // Repository'de yaptığımız Soft Delete değişikliği sayesinde bu metot 
-        // veriyi DB'den silmez, sadece IsDeleted=1 olarak işaretler.
+        // Repository'deki Soft Delete sayesinde veri kalıcı silinmez.
         await _todoService.DeleteAsync(id, ct);
         return NoContent();
     }

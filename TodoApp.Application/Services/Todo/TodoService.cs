@@ -22,18 +22,18 @@ public class TodoService : ITodoService
         _currentUserService = currentUserService;
     }
 
-    // SAYFALAMA MANTIĞI BURADA GÜNCELLENDİ
-    public async Task<PaginatedResult<TodoResponse>> GetMyTodosAsync(int pageNumber, int pageSize, CancellationToken ct)
+    // ARAMA VE SAYFALAMA BURADA BİRLEŞTİ
+    public async Task<PaginatedResult<TodoResponse>> GetMyTodosAsync(int pageNumber, int pageSize, string? search, CancellationToken ct)
     {
         var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
 
-        // 1. Repository'den sayfalanmış ham veriyi çekiyoruz
-        var paginatedTodos = await _todoRepository.GetUserTodosAsync(userId, pageNumber, pageSize, ct);
+        // 1. Repository'ye 'search' parametresini de gönderiyoruz
+        var paginatedTodos = await _todoRepository.GetUserTodosAsync(userId, pageNumber, pageSize, search, ct);
 
-        // 2. İçindeki TodoItem'ları TodoResponse'a Map ediyoruz
+        // 2. Ham TodoItem listesini TodoResponse listesine çeviriyoruz
         var mappedItems = paginatedTodos.Items.Select(MapToResponse).ToList();
 
-        // 3. Yeni sayfalanmış sonucu TodoResponse tipiyle geri döndürüyoruz
+        // 3. Sonucu PaginatedResult paketiyle geri dönüyoruz
         return new PaginatedResult<TodoResponse>(
             mappedItems,
             paginatedTodos.TotalCount,

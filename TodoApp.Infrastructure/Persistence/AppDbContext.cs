@@ -33,6 +33,10 @@ public class AppDbContext : DbContext
 
             // MANUEL MIGRATION: Yeni eklenen Address alanı yapılandırması
             b.Property(u => u.Address).HasMaxLength(500);
+            b.Property(u => u.Role)
+     .IsRequired()
+     .HasMaxLength(20)
+     .HasDefaultValue("User");
         });
 
         // 2. TODOITEMS TABLOSU YAPILANDIRMASI
@@ -41,14 +45,20 @@ public class AppDbContext : DbContext
             b.Property(t => t.Title).IsRequired().HasMaxLength(200);
 
             // SOFT DELETE: Global Query Filter
-            // Bu satır sayesinde uygulama genelinde 'IsDeleted' olanlar asla gelmez.
+            // Bu filtre, veritabanından veri çekerken silinmişleri otomatik eler.
             b.HasQueryFilter(t => !t.IsDeleted);
 
-            // İndeksler: Sorgu performansını artırır
-            b.HasIndex(t => t.UserId);
-            b.HasIndex(t => new { t.UserId, t.IsCompleted });
+            // PERFORMANS İNDEKSLERİ (Hocanın istediği kritik kısım)
 
-            // İlişki: 1 User -> Many TodoItems
+            // Kompozit İndeks: Kullanıcı ID, Silinme Durumu ve Tarih Sıralamasını tek fihristte toplar.
+            b.HasIndex(t => new { t.UserId, t.IsDeleted, t.CreatedAt })
+             .HasDatabaseName("IX_TodoItems_UserId_IsDeleted_CreatedAt");
+
+            // Arama İndeksi: Başlık (Title) aramalarını hızlandırır.
+            b.HasIndex(t => t.Title)
+             .HasDatabaseName("IX_TodoItems_Title");
+
+            // İlişki Yapılandırması: 1 User -> Many TodoItems
             b.HasOne(t => t.User)
              .WithMany(u => u.TodoItems)
              .HasForeignKey(t => t.UserId)

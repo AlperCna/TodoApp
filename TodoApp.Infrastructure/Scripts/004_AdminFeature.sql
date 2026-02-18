@@ -1,0 +1,7 @@
+USE [TodoAppDB];
+GO
+
+ALTER TABLE dbo.Users
+ADD [Role] NVARCHAR(20) NOT NULL 
+    CONSTRAINT DF_Users_Role DEFAULT('User');
+GO

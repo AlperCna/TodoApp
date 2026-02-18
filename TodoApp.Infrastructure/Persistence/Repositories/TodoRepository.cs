@@ -19,24 +19,34 @@ public class TodoRepository : ITodoRepository
         _context = context;
     }
 
-    // Sayfalama mantığı buraya eklendi
-    public async Task<PaginatedResult<TodoItem>> GetUserTodosAsync(Guid userId, int pageNumber, int pageSize, CancellationToken ct)
+    public async Task<PaginatedResult<TodoItem>> GetUserTodosAsync(
+        Guid userId,
+        int pageNumber,
+        int pageSize,
+        string? search,
+        CancellationToken ct)
     {
-        // 1. Sorguyu hazırla (Filtreler ve sıralama)
-        var query = _context.TodoItems
-            .Where(t => t.UserId == userId)
-            .OrderByDescending(t => t.CreatedAt);
+        // 1. Temel sorguyu hazırla (Global Query Filter sayesinde IsDeleted=0 otomatik uygulanır)
+        var query = _context.TodoItems.Where(t => t.UserId == userId);
 
-        // 2. Toplam kayıt sayısını hesapla (Sayfalama için kritik)
+        // 2. Arama Filtresi (Eğer arama kutusuna bir şey yazılmışsa)
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            // Title indeksi burada performans sağlar
+            query = query.Where(t => t.Title.Contains(search));
+        }
+
+        // 3. Filtrelenmiş toplam kayıt sayısını al (Sayfalama için şart)
         var totalCount = await query.CountAsync(ct);
 
-        // 3. Skip ve Take ile verinin sadece ilgili parçasını çek
+        // 4. Sıralama, Atlatma (Skip) ve Alma (Take) işlemlerini uygula
         var items = await query
-            .Skip((pageNumber - 1) * pageSize) // Önceki sayfaları atla
-            .Take(pageSize)                    // Sadece istenen sayfa kadar al
+            .OrderByDescending(t => t.CreatedAt) // En yeni en üstte
+            .Skip((pageNumber - 1) * pageSize)   // Önceki sayfaları geç
+            .Take(pageSize)                      // Sadece istenen sayfa kadarını getir
             .ToListAsync(ct);
 
-        // 4. Sonucu PaginatedResult zarfı içinde döndür
+        // 5. Sonucu profesyonel PaginatedResult zarfı içinde dön
         return new PaginatedResult<TodoItem>(items, totalCount, pageNumber, pageSize);
     }
 
@@ -59,7 +69,7 @@ public class TodoRepository : ITodoRepository
 
     public async Task DeleteAsync(TodoItem todo, CancellationToken ct)
     {
-        // Soft Delete: Veriyi silmiyoruz, işaretliyoruz
+        // Soft Delete: Veriyi fiziksel olarak silmiyoruz
         todo.IsDeleted = true;
         todo.DeletedAt = DateTime.UtcNow;
 

@@ -16,7 +16,10 @@ public class User : BaseEntity
     public string PasswordHash { get; set; } = default!;
     public string PasswordSalt { get; set; } = default!;
 
-    public string? Address { get; set; } 
+    public string? Address { get; set; }
+
+    public string Role { get; set; } = "User";
+
 
     // Navigation
     public ICollection<TodoItem> TodoItems { get; set; } = new List<TodoItem>();

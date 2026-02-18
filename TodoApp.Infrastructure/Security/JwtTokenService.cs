@@ -1,9 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿// TodoApp.Infrastructure.Security
 
+using System;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -25,23 +22,40 @@ public class JwtTokenService : IJwtTokenService
 
     public string CreateToken(User user)
     {
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["JwtSettings:Secret"]!));
+        var secret = _config["JwtSettings:Secret"]
+            ?? throw new InvalidOperationException("JwtSettings:Secret missing.");
+
+        var issuer = _config["JwtSettings:Issuer"]
+            ?? throw new InvalidOperationException("JwtSettings:Issuer missing.");
+
+        var audience = _config["JwtSettings:Audience"]
+            ?? throw new InvalidOperationException("JwtSettings:Audience missing.");
+
+        var expiryStr = _config["JwtSettings:ExpiryMinutes"]
+            ?? throw new InvalidOperationException("JwtSettings:ExpiryMinutes missing.");
+
+        if (!double.TryParse(expiryStr, out var expiryMinutes))
+            throw new InvalidOperationException("JwtSettings:ExpiryMinutes invalid.");
+
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        // Biletin içine kimlik bilgilerini (Claims) gömüyoruz
-        var claims = new[]
-{
-    
-    new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-    new Claim(JwtRegisteredClaimNames.Email, user.Email),
-    new Claim("username", user.UserName)
-};
+        // ✅ Claims: artık Role da ekliyoruz
+        var claims = new List<Claim>
+        {
+            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new Claim(JwtRegisteredClaimNames.Email, user.Email),
+            new Claim("username", user.UserName ?? string.Empty),
+
+            // ✅ KRİTİK: Role-Based Authorization için
+            new Claim(ClaimTypes.Role, user.Role ?? "User")
+        };
 
         var token = new JwtSecurityToken(
-            issuer: _config["JwtSettings:Issuer"],
-            audience: _config["JwtSettings:Audience"],
+            issuer: issuer,
+            audience: audience,
             claims: claims,
-            expires: DateTime.Now.AddMinutes(double.Parse(_config["JwtSettings:ExpiryMinutes"]!)),
+            expires: DateTime.UtcNow.AddMinutes(expiryMinutes),
             signingCredentials: creds
         );
 
