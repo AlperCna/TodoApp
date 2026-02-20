@@ -7,8 +7,10 @@ using TodoApp.Domain.Common;
 
 namespace TodoApp.Domain.Entities;
 
-public class User : BaseEntity
+public class User : BaseEntity, ITenantEntity
 {
+
+    public Guid TenantId { get; set; } // 👈 Hangi kiracıya ait?
     public string Email { get; set; } = default!;
     public string UserName { get; set; } = default!;
 
@@ -22,5 +24,6 @@ public class User : BaseEntity
 
 
     // Navigation
+    public Tenant? Tenant { get; set; }
     public ICollection<TodoItem> TodoItems { get; set; } = new List<TodoItem>();
 }

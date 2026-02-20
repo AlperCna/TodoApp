@@ -22,17 +22,24 @@ public class UserRepository : IUserRepository
 
     public async Task<User?> GetByEmailAsync(string email, CancellationToken ct = default)
     {
-        return await _context.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
+        // ✅ KRİTİK: Giriş anında filtreyi devre dışı bırakıyoruz
+        // Çünkü giriş yaparken sistem henüz TenantId'yi bilmiyor.
+        return await _context.Users
+            .IgnoreQueryFilters() // 👈 Bu metot filtreyi bu sorgu için kapatır
+            .FirstOrDefaultAsync(u => u.Email == email, ct);
     }
 
     public async Task<bool> EmailExistsAsync(string email, CancellationToken ct = default)
     {
-        return await _context.Users.AnyAsync(u => u.Email == email, ct);
+        // Kayıt olurken de email'in sistemde (tüm tenantlar dahil) olup olmadığını kontrol etmeliyiz
+        return await _context.Users
+            .IgnoreQueryFilters() // 👈 Email kontrolü global (tüm sistemde) olmalı
+            .AnyAsync(u => u.Email == email, ct);
     }
 
     public async Task AddAsync(User user, CancellationToken ct = default)
     {
         await _context.Users.AddAsync(user, ct);
-        await _context.SaveChangesAsync(ct); // İşlemi hemen veritabanına yansıtıyoruz
+        await _context.SaveChangesAsync(ct);
     }
 }

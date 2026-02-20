@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace TodoApp.Application.DTOs.Common; // Klasör ismine göre burası değişebilir
+namespace TodoApp.Application.DTOs.Common; 
 
 public class PaginatedResult<T>
 {
