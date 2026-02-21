@@ -48,7 +48,7 @@ public class JwtTokenService : IJwtTokenService
             new Claim("username", user.UserName ?? string.Empty),
 
             // ✅ Multi-Tenancy İzolasyonu İçin Kritik Satır
-            new Claim("tenantId", user.TenantId.ToString()),
+           new Claim("tenantId", user.TenantId.ToString()),
 
             // ✅ KRİTİK: Role-Based Authorization için
             new Claim(ClaimTypes.Role, user.Role ?? "User")

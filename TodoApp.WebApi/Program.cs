@@ -56,15 +56,16 @@ builder.Services.AddCors(options =>
 // --- 4. DEPENDENCY INJECTION (Kabloları Bağlama) ---
 builder.Services.AddHttpContextAccessor(); // HttpContext erişimi için
 
-// Auth ve Multi-Tenancy Servisleri
+// ✅ Multi-Tenancy ve Altyapı Servisleri
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
-builder.Services.AddScoped<ICurrentTenantService, CurrentTenantService>(); // 👈 Multi-Tenancy bağlantısı burada!
+builder.Services.AddScoped<ICurrentTenantService, CurrentTenantService>();
+builder.Services.AddScoped<ITenantRepository, TenantRepository>(); // 👈 KRİTİK: Dinamik Şirket Yönetimi için eklendi
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
-// Todo Katmanı
+// ✅ Todo Katmanı
 builder.Services.AddScoped<ITodoRepository, TodoRepository>();
 builder.Services.AddScoped<ITodoService, TodoService>();
 
@@ -101,13 +102,13 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// Global Hata Yakalayıcı
+// Global Hata Yakalayıcı (ExceptionMiddleware)
 app.UseMiddleware<ExceptionMiddleware>();
 
 app.UseHttpsRedirection();
 app.UseCors("AllowAll");
 
-// Kimlik Doğrulama ve Yetkilendirme (AuthGuard ile uyumlu)
+// Kimlik Doğrulama ve Yetkilendirme
 app.UseAuthentication();
 app.UseAuthorization();
 

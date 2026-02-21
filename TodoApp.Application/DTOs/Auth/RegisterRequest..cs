@@ -6,4 +6,6 @@ using System.Threading.Tasks;
 
 namespace TodoApp.Application.DTOs.Auth;
 
-public record RegisterRequest(string UserName, string Email, string Password);
+// TodoApp.Application.DTOs.Auth/RegisterRequest.cs
+// TenantName parametresini ekliyoruz.
+public record RegisterRequest(string UserName, string Email, string Password, string TenantName);

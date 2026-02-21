@@ -14,15 +14,18 @@ namespace TodoApp.Application.Services.Auth;
 public class AuthService : IAuthService
 {
     private readonly IUserRepository _users;
+    private readonly ITenantRepository _tenants; // ✅ 3. Adım: Yeni eklendi
     private readonly IPasswordHasher _hasher;
     private readonly IJwtTokenService _jwt;
 
     public AuthService(
         IUserRepository users,
+        ITenantRepository tenants, // ✅ Dependency Injection'a eklendi
         IPasswordHasher hasher,
         IJwtTokenService jwt)
     {
         _users = users;
+        _tenants = tenants;
         _hasher = hasher;
         _jwt = jwt;
     }
@@ -35,29 +38,48 @@ public class AuthService : IAuthService
         // Normalize
         var email = request.Email.Trim().ToLowerInvariant();
         var userName = request.UserName.Trim();
+        var tenantName = request.TenantName.Trim(); // ✅ Yeni: Şirket adını yakala
 
         if (string.IsNullOrWhiteSpace(email) ||
             string.IsNullOrWhiteSpace(userName) ||
+            string.IsNullOrWhiteSpace(tenantName) ||
             string.IsNullOrWhiteSpace(request.Password))
         {
-            throw new InvalidOperationException("Geçersiz kayıt isteği.");
+            throw new InvalidOperationException("Geçersiz kayıt isteği. Tüm alanları doldurun.");
         }
 
-        // Email unique
+        // 1️⃣ Dinamik Şirket (Tenant) Yönetimi
+        var tenant = await _tenants.GetByNameAsync(tenantName, ct);
+
+        // Eğer şirket yoksa, yeni bir tane oluştur (SaaS mantığı)
+        if (tenant == null)
+        {
+            tenant = new Tenant
+            {
+                Id = Guid.NewGuid(),
+                Name = tenantName,
+                CreatedAt = DateTime.UtcNow
+            };
+            await _tenants.AddAsync(tenant, ct);
+        }
+
+        // Email kontrolü (IgnoreQueryFilters ile tüm sistemde kontrol eder)
         if (await _users.EmailExistsAsync(email, ct))
             throw new InvalidOperationException("Email zaten kayıtlı.");
 
         // Hash + salt
         var hash = _hasher.HashPassword(request.Password, out var salt);
 
-        // User create
+        // 2️⃣ Kullanıcıyı ilgili TenantId ile oluştur
         var user = new User
         {
             Id = Guid.NewGuid(),
             Email = email,
             UserName = userName,
+            TenantId = tenant.Id, // 👈 KRİTİK: Kullanıcı artık sahipsiz değil!
             PasswordHash = hash,
             PasswordSalt = salt,
+            Role = "User", // Dilersen ilk kullanıcıyı Admin yapabilirsin
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = null
         };
@@ -65,7 +87,7 @@ public class AuthService : IAuthService
         // Persist
         await _users.AddAsync(user, ct);
 
-        // Token
+        // Token üretirken artık içindeki TenantId bilgisi de JwtTokenService'e gidecek
         var token = _jwt.CreateToken(user);
 
         // Response
@@ -88,7 +110,7 @@ public class AuthService : IAuthService
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(request.Password))
             throw new UnauthorizedAccessException("Email veya şifre hatalı.");
 
-        // User fetch
+        // User fetch (UserRepository içindeki IgnoreQueryFilters sayesinde TenantId bilmeden çekeriz)
         var user = await _users.GetByEmailAsync(email, ct);
         if (user is null)
             throw new UnauthorizedAccessException("Email veya şifre hatalı.");
@@ -98,7 +120,7 @@ public class AuthService : IAuthService
         if (!ok)
             throw new UnauthorizedAccessException("Email veya şifre hatalı.");
 
-        // Token
+        // Token üretimi (User içindeki TenantId otomatik olarak Jwt'ye eklenecek)
         var token = _jwt.CreateToken(user);
 
         return new AuthResponse(
