@@ -8,6 +8,7 @@ using TodoApp.Application.DTOs.Todo;
 using TodoApp.Application.Interfaces.Common;
 using TodoApp.Application.Interfaces.Persistence;
 using TodoApp.Domain.Entities;
+using Ganss.Xss; // ✅ Güvenlik kütüphanesi eklendi
 
 namespace TodoApp.Application.Services.Todo;
 
@@ -15,11 +16,13 @@ public class TodoService : ITodoService
 {
     private readonly ITodoRepository _todoRepository;
     private readonly ICurrentUserService _currentUserService;
+    private readonly HtmlSanitizer _sanitizer; // ✅ Merkezi temizleyici
 
     public TodoService(ITodoRepository todoRepository, ICurrentUserService currentUserService)
     {
         _todoRepository = todoRepository;
         _currentUserService = currentUserService;
+        _sanitizer = new HtmlSanitizer(); // ✅ Sanitizer yapılandırması
     }
 
     // ARAMA VE SAYFALAMA BURADA BİRLEŞTİ
@@ -44,15 +47,18 @@ public class TodoService : ITodoService
     public async Task<TodoResponse> CreateAsync(TodoCreateRequest request, CancellationToken ct)
     {
         var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
+
+        // 🧼 Veritabanına yazmadan önce "Yıkama" işlemi yapıyoruz
         var todo = new TodoItem
         {
             Id = Guid.NewGuid(),
-            Title = request.Title,
-            Description = request.Description,
+            Title = _sanitizer.Sanitize(request.Title), // ✅ Script etiketlerini temizle
+            Description = request.Description != null ? _sanitizer.Sanitize(request.Description) : null, // ✅ HTML içeriğini temizle
             DueDate = request.DueDate,
             UserId = userId,
             IsCompleted = false
         };
+
         await _todoRepository.AddAsync(todo, ct);
         return MapToResponse(todo);
     }
@@ -71,8 +77,9 @@ public class TodoService : ITodoService
         var todo = await _todoRepository.GetByIdAsync(id, ct);
         if (todo == null || todo.UserId != userId) throw new UnauthorizedAccessException("Güncelleme yetkiniz yok.");
 
-        todo.Title = request.Title;
-        todo.Description = request.Description;
+        // 🧼 Güncelleme sırasında gelen verileri de sanitize ediyoruz
+        todo.Title = _sanitizer.Sanitize(request.Title);
+        todo.Description = request.Description != null ? _sanitizer.Sanitize(request.Description) : null;
         todo.IsCompleted = request.IsCompleted;
         todo.DueDate = request.DueDate;
 

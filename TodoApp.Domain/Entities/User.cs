@@ -22,6 +22,9 @@ public class User : BaseEntity, ITenantEntity
 
     public string Role { get; set; } = "User";
 
+    public string? RefreshToken { get; set; }
+    public DateTime? RefreshTokenExpiryTime { get; set; }
+
 
     // Navigation
     public Tenant? Tenant { get; set; }

@@ -36,7 +36,11 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = builder.Configuration["JwtSettings:Issuer"],
         ValidAudience = builder.Configuration["JwtSettings:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["JwtSettings:Secret"]!))
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["JwtSettings:Secret"]!)),
+
+        // 🛡️ KRİTİK TEST AYARI: 5 dakikalık varsayılan toleransı sıfırlar. 
+        // 1 dakika dolduğu saniyede token geçersiz sayılır.
+        ClockSkew = TimeSpan.Zero
     };
 });
 
@@ -45,11 +49,11 @@ builder.Services.AddAuthorization();
 // --- 3. CORS AYARLARI ---
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("AllowAngular", policy => // Politika ismini daha spesifik yaptık
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        policy.WithOrigins("http://localhost:4200") // 🛡️ Sadece senin Angular uygulana izin ver
+              .AllowAnyMethod()                    // GET, POST, PUT, DELETE çalışsın
+              .AllowAnyHeader();                   // JWT ve diğer başlıklar geçebilsin
     });
 });
 
@@ -105,8 +109,16 @@ if (app.Environment.IsDevelopment())
 // Global Hata Yakalayıcı (ExceptionMiddleware)
 app.UseMiddleware<ExceptionMiddleware>();
 
+// ✅ CSP Güvenlik Başlığı (Bonus Katman)
+app.Use(async (context, next) =>
+{
+       
+    context.Response.Headers.Append("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';");
+    await next();
+});
+
 app.UseHttpsRedirection();
-app.UseCors("AllowAll");
+app.UseCors("AllowAngular");
 
 // Kimlik Doğrulama ve Yetkilendirme
 app.UseAuthentication();

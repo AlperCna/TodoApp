@@ -1,8 +1,6 @@
-﻿// TodoApp.Infrastructure.Security
-
-using System;
-using System.IdentityModel.Tokens.Jwt;
+﻿using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography; // ✅ Kriptografik rastgelelik için eklendi
 using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
@@ -20,6 +18,7 @@ public class JwtTokenService : IJwtTokenService
         _config = config;
     }
 
+    // --- 1. ACCESS TOKEN ÜRETİMİ (JWT) ---
     public string CreateToken(User user)
     {
         var secret = _config["JwtSettings:Secret"]
@@ -40,17 +39,13 @@ public class JwtTokenService : IJwtTokenService
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        // ✅ Claims: artık Role da ekliyoruz
+        // ✅ Claims: Multi-tenancy ve Role desteği korunuyor
         var claims = new List<Claim>
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, user.Email),
             new Claim("username", user.UserName ?? string.Empty),
-
-            // ✅ Multi-Tenancy İzolasyonu İçin Kritik Satır
-           new Claim("tenantId", user.TenantId.ToString()),
-
-            // ✅ KRİTİK: Role-Based Authorization için
+            new Claim("tenantId", user.TenantId.ToString()),
             new Claim(ClaimTypes.Role, user.Role ?? "User")
         };
 
@@ -63,5 +58,15 @@ public class JwtTokenService : IJwtTokenService
         );
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    // --- 2. REFRESH TOKEN ÜRETİMİ (Rastgele Anahtar) ---
+    // Bu metod veritabanındaki yeni RefreshToken kolonunu besleyecek
+    public string GenerateRefreshToken()
+    {
+        var randomNumber = new byte[64];
+        using var rng = RandomNumberGenerator.Create();
+        rng.GetBytes(randomNumber);
+        return Convert.ToBase64String(randomNumber);
     }
 }

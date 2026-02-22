@@ -12,4 +12,6 @@ public interface IJwtTokenService
 {
     // Kullanıcı bilgilerini alarak ona özel bir JWT bilet üretir
     string CreateToken(User user);
+
+    string GenerateRefreshToken();
 }
