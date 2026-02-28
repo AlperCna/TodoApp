@@ -19,6 +19,8 @@ public class TodoItem : BaseEntity, ITenantEntity //  ITenantEntity eklendi
     public bool IsDeleted { get; set; } = false;
     public DateTime? DeletedAt { get; set; }
 
+    public bool IsReminderSent { get; set; } = false;
+
     // Navigation
     public Tenant? Tenant { get; set; } // Tenant bağlantısı
     public User? User { get; set; }

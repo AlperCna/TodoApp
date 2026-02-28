@@ -6,6 +6,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using FluentValidation;
 using FluentValidation.AspNetCore;
+using Hangfire; // 👈 Hangfire için eklendi
 using TodoApp.Application.Interfaces.Common;
 using TodoApp.Application.Interfaces.Persistence;
 using TodoApp.Application.Interfaces.Security;
@@ -16,6 +17,7 @@ using TodoApp.Infrastructure.Persistence.Repositories;
 using TodoApp.Infrastructure.Security;
 using TodoApp.WebApi.Services;
 using TodoApp.WebApi.Middlewares;
+using TodoApp.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -58,17 +60,23 @@ builder.Services.AddCors(options =>
 });
 
 // --- 4. VALIDASYON KATMANI (FLUENT VALIDATION) ---
-// ✅ DÜZELTİLDİ: Otomatik validasyonu aktif et
 builder.Services.AddFluentValidationAutoValidation();
-
-// ✅ KRİTİK DÜZELTME: Validator'ların bulunduğu Application katmanını taratıyoruz.
-// ITodoService Application katmanında olduğu için, sistem bu referans üzerinden tüm validatorları bulur.
 builder.Services.AddValidatorsFromAssemblyContaining<ITodoService>();
 
-// --- 5. DEPENDENCY INJECTION (Kabloları Bağlama) ---
+// --- 5. HANGFIRE YAPILANDIRMASI (YENİ) ---
+// Hangfire'ın arka planda kendi tablolarını SQL Server'da oluşturması için gerekli servisler
+builder.Services.AddHangfire(config => config
+    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+    .UseSimpleAssemblyNameTypeSerializer()
+    .UseRecommendedSerializerSettings()
+    .UseSqlServerStorage(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// Hangfire sunucusunu (arka plan işleme motoru) aktif et
+builder.Services.AddHangfireServer();
+
+// --- 6. DEPENDENCY INJECTION (Kabloları Bağlama) ---
 builder.Services.AddHttpContextAccessor();
 
-// Multi-Tenancy ve Altyapı Servisleri
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<ICurrentTenantService, CurrentTenantService>();
 builder.Services.AddScoped<ITenantRepository, TenantRepository>();
@@ -76,14 +84,18 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
-
-// Todo Katmanı
 builder.Services.AddScoped<ITodoRepository, TodoRepository>();
 builder.Services.AddScoped<ITodoService, TodoService>();
 
+// 📧 Mail Servisi (YENİ)
+builder.Services.AddScoped<IEmailService, EmailService>(); // 👈
+
+// ⏰ Hatırlatıcı Arka Plan İşi (YENİ)
+builder.Services.AddScoped<TodoReminderJob>(); // 👈 Bunu ekledik
+
 builder.Services.AddControllers();
 
-// --- 6. SWAGGER AYARLARI (JWT DESTEKLİ) ---
+// --- 7. SWAGGER AYARLARI (JWT DESTEKLİ) ---
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -102,12 +114,13 @@ builder.Services.AddSwaggerGen(c =>
             new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" } },
             Array.Empty<string>()
         }
-    });
+    }
+    );
 });
 
 var app = builder.Build();
 
-// --- 7. HTTP REQUEST PIPELINE ---
+// --- 8. HTTP REQUEST PIPELINE ---
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -115,6 +128,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseMiddleware<ExceptionMiddleware>();
+
+// --- 9. HANGFIRE DASHBOARD (YENİ) ---
+// Hangfire panelini /hangfire adresinde aktif eder
+app.UseHangfireDashboard();
 
 app.Use(async (context, next) =>
 {
@@ -129,5 +146,18 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// --- 10. RECURRING JOBS (TEKRARLAYAN İŞLER) ---
+// Uygulama her başladığında hatırlatıcı işini Hangfire kuyruğuna ekler/günceller
+using (var scope = app.Services.CreateScope())
+{
+    var recurringJobManager = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
+
+    // Her saat başı çalışacak şekilde ayarlandı
+    recurringJobManager.AddOrUpdate<TodoReminderJob>(
+        "todo-reminder-job",
+        job => job.SendRemindersAsync(),
+        Cron.Hourly);
+}
 
 app.Run();
