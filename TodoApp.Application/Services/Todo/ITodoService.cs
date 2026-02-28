@@ -1,8 +1,7 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using TodoApp.Application.DTOs.Common; // PaginatedResult için
+using TodoApp.Application.DTOs.Common;
 using TodoApp.Application.DTOs.Todo;
 
 namespace TodoApp.Application.Services.Todo;
@@ -11,8 +10,8 @@ public interface ITodoService
 {
     Task<TodoResponse> CreateAsync(TodoCreateRequest request, CancellationToken ct = default);
 
-    // GÜNCELLENEN KISIM: 'search' parametresi eklendi
-    Task<PaginatedResult<TodoResponse>> GetMyTodosAsync(
+    // Hem Admin hem normal kullanıcı için ortak sayfalı listeleme metodu
+    Task<PaginatedResult<TodoResponse>> GetTodosAsync(
         int pageNumber,
         int pageSize,
         string? search = null,

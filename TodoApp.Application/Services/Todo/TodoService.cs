@@ -8,35 +8,34 @@ using TodoApp.Application.DTOs.Todo;
 using TodoApp.Application.Interfaces.Common;
 using TodoApp.Application.Interfaces.Persistence;
 using TodoApp.Domain.Entities;
-using Ganss.Xss; // ✅ Güvenlik kütüphanesi eklendi
-
+using TodoApp.Application.Exceptions;
 namespace TodoApp.Application.Services.Todo;
 
 public class TodoService : ITodoService
 {
     private readonly ITodoRepository _todoRepository;
     private readonly ICurrentUserService _currentUserService;
-    private readonly HtmlSanitizer _sanitizer; // ✅ Merkezi temizleyici
 
     public TodoService(ITodoRepository todoRepository, ICurrentUserService currentUserService)
     {
         _todoRepository = todoRepository;
         _currentUserService = currentUserService;
-        _sanitizer = new HtmlSanitizer(); // ✅ Sanitizer yapılandırması
     }
 
-    // ARAMA VE SAYFALAMA BURADA BİRLEŞTİ
-    public async Task<PaginatedResult<TodoResponse>> GetMyTodosAsync(int pageNumber, int pageSize, string? search, CancellationToken ct)
+    /// <summary>
+    /// Kullanıcının yetkisi dahilindeki görevleri sayfalı ve aramalı olarak getirir.
+    /// </summary>
+    public async Task<PaginatedResult<TodoResponse>> GetTodosAsync(int pageNumber, int pageSize, string? search, CancellationToken ct)
     {
         var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
+        var role = _currentUserService.Role;
 
-        // 1. Repository'ye 'search' parametresini de gönderiyoruz
-        var paginatedTodos = await _todoRepository.GetUserTodosAsync(userId, pageNumber, pageSize, search, ct);
+        // Admin her şeyi görür, User sadece kendi görevlerini.
+        Guid? targetUserId = role == "Admin" ? null : userId;
 
-        // 2. Ham TodoItem listesini TodoResponse listesine çeviriyoruz
+        var paginatedTodos = await _todoRepository.GetTodosAsync(targetUserId, pageNumber, pageSize, search, ct);
         var mappedItems = paginatedTodos.Items.Select(MapToResponse).ToList();
 
-        // 3. Sonucu PaginatedResult paketiyle geri dönüyoruz
         return new PaginatedResult<TodoResponse>(
             mappedItems,
             paginatedTodos.TotalCount,
@@ -44,16 +43,19 @@ public class TodoService : ITodoService
             pageSize);
     }
 
+    /// <summary>
+    /// Yeni görev oluşturur. 
+    /// SRP: Veri temizliği (Sanitization) burada değil, Validator katmanında yapıldı.
+    /// </summary>
     public async Task<TodoResponse> CreateAsync(TodoCreateRequest request, CancellationToken ct)
     {
         var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
 
-        // 🧼 Veritabanına yazmadan önce "Yıkama" işlemi yapıyoruz
         var todo = new TodoItem
         {
             Id = Guid.NewGuid(),
-            Title = _sanitizer.Sanitize(request.Title), // ✅ Script etiketlerini temizle
-            Description = request.Description != null ? _sanitizer.Sanitize(request.Description) : null, // ✅ HTML içeriğini temizle
+            Title = request.Title, // Güvenli veri: Validator katmanı XSS kontrolünü yaptı
+            Description = request.Description,
             DueDate = request.DueDate,
             UserId = userId,
             IsCompleted = false
@@ -63,23 +65,38 @@ public class TodoService : ITodoService
         return MapToResponse(todo);
     }
 
+    /// <summary>
+    /// Tek bir görevi getirir. Yetki kontrolü içerir.
+    /// </summary>
     public async Task<TodoResponse> GetByIdMineAsync(Guid id, CancellationToken ct)
     {
         var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
         var todo = await _todoRepository.GetByIdAsync(id, ct);
-        if (todo == null || todo.UserId != userId) throw new UnauthorizedAccessException("Yetkisiz erişim.");
+
+        // Kayıt yoksa veya kullanıcıya ait değilse (ve admin değilse) yetki hatası dön
+        var role = _currentUserService.Role;
+        if (todo == null || (role != "Admin" && todo.UserId != userId))
+            throw new KeyNotFoundException("İstenen görev bulunamadı veya erişim yetkiniz yok.");
+
         return MapToResponse(todo);
     }
 
+    /// <summary>
+    /// Mevcut görevi günceller.
+    /// </summary>
     public async Task<TodoResponse> UpdateAsync(Guid id, TodoUpdateRequest request, CancellationToken ct)
     {
         var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
         var todo = await _todoRepository.GetByIdAsync(id, ct);
-        if (todo == null || todo.UserId != userId) throw new UnauthorizedAccessException("Güncelleme yetkiniz yok.");
 
-        // 🧼 Güncelleme sırasında gelen verileri de sanitize ediyoruz
-        todo.Title = _sanitizer.Sanitize(request.Title);
-        todo.Description = request.Description != null ? _sanitizer.Sanitize(request.Description) : null;
+        var role = _currentUserService.Role;
+        if (todo == null || (role != "Admin" && todo.UserId != userId))
+            throw new UnauthorizedAccessException("Bu görevi güncelleme yetkiniz yok.");
+
+        // İŞ KURALI ÖRNEĞİ: Eğer görev 1 aydan daha eskiyse güncellenemesin gibi kurallar buraya gelir.
+
+        todo.Title = request.Title;
+        todo.Description = request.Description;
         todo.IsCompleted = request.IsCompleted;
         todo.DueDate = request.DueDate;
 
@@ -87,25 +104,52 @@ public class TodoService : ITodoService
         return MapToResponse(todo);
     }
 
+    /// <summary>
+    /// Görevi siler. 
+    /// BUSINESS RULE: Tamamlanmış görevlerin silinmesini engeller.
+    /// </summary>
     public async Task DeleteAsync(Guid id, CancellationToken ct)
     {
         var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
         var todo = await _todoRepository.GetByIdAsync(id, ct);
-        if (todo == null || todo.UserId != userId) throw new UnauthorizedAccessException("Silme yetkiniz yok.");
+
+        var role = _currentUserService.Role;
+        if (todo == null || (role != "Admin" && todo.UserId != userId))
+            throw new UnauthorizedAccessException("Bu görevi silme yetkiniz yok.");
+
+        // 🚀 KRİTİK İŞ KURALI (Hocanın istediği sayfa bazlı hata)
+        if (todo.IsCompleted)
+        {
+            throw new BusinessException(
+                message: "Tamamlanmış bir görevi silemezsiniz. Lütfen önce durumunu 'Devam Ediyor' olarak işaretleyin.",
+                errorCode: "TODO_DELETE_FORBIDDEN_COMPLETED"
+            );
+        }
+
         await _todoRepository.DeleteAsync(todo, ct);
     }
 
+    /// <summary>
+    /// Görevin tamamlanma durumunu tersine çevirir.
+    /// </summary>
     public async Task<TodoResponse> ToggleCompleteAsync(Guid id, CancellationToken ct)
     {
         var userId = _currentUserService.UserId ?? throw new UnauthorizedAccessException();
         var todo = await _todoRepository.GetByIdAsync(id, ct);
-        if (todo == null || todo.UserId != userId) throw new UnauthorizedAccessException("İşlem yetkisiz.");
+
+        var role = _currentUserService.Role;
+        if (todo == null || (role != "Admin" && todo.UserId != userId))
+            throw new UnauthorizedAccessException("İşlem için yetkiniz bulunmamaktadır.");
 
         todo.IsCompleted = !todo.IsCompleted;
+
         await _todoRepository.UpdateAsync(todo, ct);
         return MapToResponse(todo);
     }
 
+    /// <summary>
+    /// Entity nesnesini Response DTO nesnesine dönüştürür.
+    /// </summary>
     private static TodoResponse MapToResponse(TodoItem todo)
         => new(
             todo.Id,

@@ -1,8 +1,11 @@
 ﻿using System.Text;
+using System.Reflection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using FluentValidation;
+using FluentValidation.AspNetCore;
 using TodoApp.Application.Interfaces.Common;
 using TodoApp.Application.Interfaces.Persistence;
 using TodoApp.Application.Interfaces.Security;
@@ -37,9 +40,6 @@ builder.Services.AddAuthentication(options =>
         ValidIssuer = builder.Configuration["JwtSettings:Issuer"],
         ValidAudience = builder.Configuration["JwtSettings:Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["JwtSettings:Secret"]!)),
-
-        // 🛡️ KRİTİK TEST AYARI: 5 dakikalık varsayılan toleransı sıfırlar. 
-        // 1 dakika dolduğu saniyede token geçersiz sayılır.
         ClockSkew = TimeSpan.Zero
     };
 });
@@ -49,33 +49,41 @@ builder.Services.AddAuthorization();
 // --- 3. CORS AYARLARI ---
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAngular", policy => // Politika ismini daha spesifik yaptık
+    options.AddPolicy("AllowAngular", policy =>
     {
-        policy.WithOrigins("http://localhost:4200") // 🛡️ Sadece senin Angular uygulana izin ver
-              .AllowAnyMethod()                    // GET, POST, PUT, DELETE çalışsın
-              .AllowAnyHeader();                   // JWT ve diğer başlıklar geçebilsin
+        policy.WithOrigins("http://localhost:4200")
+              .AllowAnyMethod()
+              .AllowAnyHeader();
     });
 });
 
-// --- 4. DEPENDENCY INJECTION (Kabloları Bağlama) ---
-builder.Services.AddHttpContextAccessor(); // HttpContext erişimi için
+// --- 4. VALIDASYON KATMANI (FLUENT VALIDATION) ---
+// ✅ DÜZELTİLDİ: Otomatik validasyonu aktif et
+builder.Services.AddFluentValidationAutoValidation();
 
-// ✅ Multi-Tenancy ve Altyapı Servisleri
+// ✅ KRİTİK DÜZELTME: Validator'ların bulunduğu Application katmanını taratıyoruz.
+// ITodoService Application katmanında olduğu için, sistem bu referans üzerinden tüm validatorları bulur.
+builder.Services.AddValidatorsFromAssemblyContaining<ITodoService>();
+
+// --- 5. DEPENDENCY INJECTION (Kabloları Bağlama) ---
+builder.Services.AddHttpContextAccessor();
+
+// Multi-Tenancy ve Altyapı Servisleri
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<ICurrentTenantService, CurrentTenantService>();
-builder.Services.AddScoped<ITenantRepository, TenantRepository>(); // 👈 KRİTİK: Dinamik Şirket Yönetimi için eklendi
+builder.Services.AddScoped<ITenantRepository, TenantRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
-// ✅ Todo Katmanı
+// Todo Katmanı
 builder.Services.AddScoped<ITodoRepository, TodoRepository>();
 builder.Services.AddScoped<ITodoService, TodoService>();
 
 builder.Services.AddControllers();
 
-// --- 5. SWAGGER AYARLARI (JWT DESTEKLİ) ---
+// --- 6. SWAGGER AYARLARI (JWT DESTEKLİ) ---
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -99,20 +107,17 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// --- 6. HTTP REQUEST PIPELINE (Sıralama Hayatidir!) ---
+// --- 7. HTTP REQUEST PIPELINE ---
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-// Global Hata Yakalayıcı (ExceptionMiddleware)
 app.UseMiddleware<ExceptionMiddleware>();
 
-// ✅ CSP Güvenlik Başlığı (Bonus Katman)
 app.Use(async (context, next) =>
 {
-       
     context.Response.Headers.Append("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';");
     await next();
 });
@@ -120,7 +125,6 @@ app.Use(async (context, next) =>
 app.UseHttpsRedirection();
 app.UseCors("AllowAngular");
 
-// Kimlik Doğrulama ve Yetkilendirme
 app.UseAuthentication();
 app.UseAuthorization();
 

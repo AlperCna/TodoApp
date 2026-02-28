@@ -10,12 +10,12 @@ namespace TodoApp.Application.Interfaces.Persistence;
 public interface ITodoRepository
 {
     // Search parametresi eklendi. Varsayılan olarak null (boş) atanabilir.
-    Task<PaginatedResult<TodoItem>> GetUserTodosAsync(
-        Guid userId,
-        int pageNumber,
-        int pageSize,
-        string? search = null,
-        CancellationToken ct = default);
+    Task<PaginatedResult<TodoItem>> GetTodosAsync(
+         Guid? userId,
+         int pageNumber,
+         int pageSize,
+         string? search = null,
+         CancellationToken ct = default);
 
     Task<TodoItem?> GetByIdAsync(Guid id, CancellationToken ct = default);
 

@@ -1,23 +1,39 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using TodoApp.Application.Services.Todo;
 using TodoApp.Infrastructure.Persistence;
 
 namespace TodoApp.WebApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")] // ✅ sadece Admin erişebilir
+[Authorize(Roles = "Admin")] // Sadece Admin erişebilir
 public class AdminController : ControllerBase
 {
-    private readonly AppDbContext _context;
+    private readonly ITodoService _todoService; // Servis katmanı eklendi
+    private readonly AppDbContext _context; // Kullanıcı listesi için şimdilik kalabilir
 
-    public AdminController(AppDbContext context)
+    public AdminController(ITodoService todoService, AppDbContext context)
     {
+        _todoService = todoService;
         _context = context;
     }
 
-    // GET /api/admin/users  -> tüm kullanıcılar
+    // ✅ YENİ: Admin artık tüm todoları sayfalı ve aramalı olarak Servis üzerinden çeker
+    [HttpGet("todos")]
+    public async Task<IActionResult> GetTodos(
+        [FromQuery] string? search = null,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 10,
+        CancellationToken ct = default)
+    {
+        // Servis katmanı içindeki yeni mantık, rol "Admin" olduğu için tüm kayıtları dönecektir
+        var result = await _todoService.GetTodosAsync(pageNumber, pageSize, search, ct);
+        return Ok(result);
+    }
+
+    // GET /api/admin/users -> Tüm kullanıcılar (Sadeleştirildi)
     [HttpGet("users")]
     public async Task<IActionResult> GetUsers(CancellationToken ct)
     {
@@ -28,30 +44,11 @@ public class AdminController : ControllerBase
                 u.Id,
                 u.Email,
                 u.UserName,
-                u.Role
+                u.Role,
+                u.CreatedAt
             })
             .ToListAsync(ct);
 
         return Ok(users);
-    }
-
-    // GET /api/admin/todos -> tüm kullanıcıların todoları (soft delete filtresi sende global filter ile zaten eler)
-    [HttpGet("todos")]
-    public async Task<IActionResult> GetTodos(CancellationToken ct)
-    {
-        var todos = await _context.TodoItems
-            .AsNoTracking()
-            .OrderByDescending(t => t.CreatedAt)
-            .Select(t => new
-            {
-                t.Id,
-                t.Title,
-                t.IsCompleted,
-                t.CreatedAt,
-                t.UserId
-            })
-            .ToListAsync(ct);
-
-        return Ok(todos);
     }
 }

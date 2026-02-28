@@ -1,60 +1,86 @@
 ﻿using System.Net;
 using System.Text.Json;
+using Microsoft.AspNetCore.Mvc;
+using TodoApp.Application.Exceptions;
 
 namespace TodoApp.WebApi.Middlewares;
 
 public class ExceptionMiddleware
 {
     private readonly RequestDelegate _next;
+    private readonly ILogger<ExceptionMiddleware> _logger;
+    private readonly IHostEnvironment _env;
 
-    public ExceptionMiddleware(RequestDelegate next) => _next = next;
+    public ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddleware> logger, IHostEnvironment env)
+    {
+        _next = next;
+        _logger = logger;
+        _env = env;
+    }
 
     public async Task InvokeAsync(HttpContext context)
     {
-        try
-        {
-            // İsteği bir sonraki adıma ilet
-            await _next(context);
-        }
+        try { await _next(context); }
         catch (Exception ex)
         {
-            // Hata oluşursa yakala ve işle
+            _logger.LogError(ex, "Uygulama Hatası: {Message}", ex.Message);
             await HandleExceptionAsync(context, ex);
         }
     }
 
-    private static Task HandleExceptionAsync(HttpContext context, Exception exception)
+    private async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
         context.Response.ContentType = "application/json";
 
-      
-        var (statusCode, message) = exception switch
+        // 1. Durum Kodu ve Başlık Belirleme
+        var (statusCode, title, type) = exception switch
         {
-            // 401: Token yoksa veya geçersizse
-            UnauthorizedAccessException => (HttpStatusCode.Unauthorized, "Yetkisiz erişim."),
-
-            // 400: Email zaten kayıtlı veya geçersiz bir işlem yapılmaya çalışıldığında
-            InvalidOperationException => (HttpStatusCode.BadRequest, exception.Message),
-
-            // 400: Parametreler hatalı gelirse
-            ArgumentException => (HttpStatusCode.BadRequest, exception.Message),
-
-            // 404: Olmayan bir Todo ID'si ile işlem yapılırsa
-            KeyNotFoundException => (HttpStatusCode.NotFound, "İstenen kayıt bulunamadı."),
-
-            // 500: Beklenmeyen sistem hataları
-            _ => (HttpStatusCode.InternalServerError, "Sunucu tarafında bir hata oluştu.")
+            ValidationException => (HttpStatusCode.BadRequest, "Doğrulama Hatası", "ValidationError"),
+            BusinessException => (HttpStatusCode.UnprocessableEntity, "İş Kuralı İhlali", "BusinessError"),
+            UnauthorizedAccessException => (HttpStatusCode.Unauthorized, "Yetkisiz Erişim", "AuthError"),
+            KeyNotFoundException => (HttpStatusCode.NotFound, "Kayıt Bulunamadı", "NotFoundError"),
+            _ => (HttpStatusCode.InternalServerError, "Sunucu Hatası", "ServerError")
         };
 
         context.Response.StatusCode = (int)statusCode;
 
-        var response = new
+        // 2. ProblemDetails Nesnesini Oluşturma
+        var problem = new ProblemDetails
         {
-            status = context.Response.StatusCode,
-            message = message,
-            
+            Status = (int)statusCode,
+            Title = title,
+            Type = type,
+            Detail = exception.Message,
+            Instance = context.Request.Path
         };
 
-        return context.Response.WriteAsync(JsonSerializer.Serialize(response));
+        // 3. ÖZEL VERİLERİ EKLEME 
+
+        // Eğer hata bir BaseException ise ErrorCode ekle
+        if (exception is BaseException baseEx && !string.IsNullOrEmpty(baseEx.ErrorCode))
+        {
+            problem.Extensions.Add("errorCode", baseEx.ErrorCode);
+        }
+
+        // Eğer hata bir BusinessException ise ek verileri (AdditionalData) ekle
+        if (exception is BusinessException busEx && busEx.AdditionalData != null)
+        {
+            problem.Extensions.Add("data", busEx.AdditionalData);
+        }
+
+        // Validasyon hatalarını (liste olarak) ekle
+        if (exception is ValidationException valEx)
+        {
+            problem.Extensions.Add("errors", valEx.Errors);
+        }
+
+        // Development ortamındaysak StackTrace ekle
+        if (_env.IsDevelopment())
+        {
+            problem.Extensions.Add("stackTrace", exception.StackTrace);
+        }
+
+        var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        await context.Response.WriteAsync(JsonSerializer.Serialize(problem, options));
     }
 }

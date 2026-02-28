@@ -2,11 +2,11 @@
 using Microsoft.AspNetCore.Mvc;
 using TodoApp.Application.DTOs.Todo;
 using TodoApp.Application.Services.Todo;
-using TodoApp.Application.DTOs.Common; // PaginatedResult için gerekli
+using TodoApp.Application.DTOs.Common;
 
 namespace TodoApp.WebApi.Controllers;
 
-[Authorize] // Sadece giriş yapmış kullanıcılar erişebilir
+[Authorize] // Sadece giriş yapmış kullanıcılar
 [ApiController]
 [Route("api/[controller]")]
 public class TodoController : ControllerBase
@@ -18,47 +18,41 @@ public class TodoController : ControllerBase
         _todoService = todoService;
     }
 
-    /// <summary>
-    /// Kullanıcının görevlerini sayfalı ve aramalı olarak getirir.
-    /// Örn: GET api/todo?search=deneme&pageNumber=1&pageSize=10
-    /// </summary>
+    // ✅ GÜNCELLENDİ: Kullanıcı kendi todolarını servis üzerinden çeker
     [HttpGet]
     public async Task<IActionResult> GetMyTodos(
-        [FromQuery] string? search = null, // YENİ: Arama parametresi eklendi
+        [FromQuery] string? search = null,
         [FromQuery] int pageNumber = 1,
         [FromQuery] int pageSize = 10,
         CancellationToken ct = default)
     {
-        // YENİ: search parametresi artık servise iletiliyor
-        var result = await _todoService.GetMyTodosAsync(pageNumber, pageSize, search, ct);
-
-        // Dönen result: Items, TotalCount ve Page bilgilerini içerir.
+        // Servis katmanı, rol "User" olduğu için sadece bu kullanıcının Id'si ile filtreleme yapacaktır
+        var result = await _todoService.GetTodosAsync(pageNumber, pageSize, search, ct);
         return Ok(result);
     }
 
-    [HttpPost] // POST api/todo
+    [HttpPost]
     public async Task<IActionResult> Create(TodoCreateRequest request, CancellationToken ct)
     {
         var result = await _todoService.CreateAsync(request, ct);
         return Ok(result);
     }
 
-    [HttpPut("{id}")] // PUT api/todo/{id}
+    [HttpPut("{id}")]
     public async Task<IActionResult> Update(Guid id, TodoUpdateRequest request, CancellationToken ct)
     {
         var result = await _todoService.UpdateAsync(id, request, ct);
         return Ok(result);
     }
 
-    [HttpDelete("{id}")] // DELETE api/todo/{id}
+    [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        // Repository'deki Soft Delete sayesinde veri kalıcı silinmez.
         await _todoService.DeleteAsync(id, ct);
         return NoContent();
     }
 
-    [HttpPatch("{id}/toggle")] // PATCH api/todo/{id}/toggle
+    [HttpPatch("{id}/toggle")]
     public async Task<IActionResult> Toggle(Guid id, CancellationToken ct)
     {
         var result = await _todoService.ToggleCompleteAsync(id, ct);

@@ -6,8 +6,8 @@ using System.Threading.Tasks;
 
 namespace TodoApp.Application.DTOs.Auth;
 
-// ✅ RefreshToken eklendi
+// RefreshToken eklendi
 public record AuthResponse(Guid Id, string UserName, string Email, string Token, string RefreshToken);
 
-// ✅ Yenileme isteği için yeni bir DTO
+// Yenileme isteği için yeni bir DTO
 public record RefreshTokenRequest(string RefreshToken);

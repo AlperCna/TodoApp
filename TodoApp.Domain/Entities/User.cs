@@ -10,7 +10,7 @@ namespace TodoApp.Domain.Entities;
 public class User : BaseEntity, ITenantEntity
 {
 
-    public Guid TenantId { get; set; } // 👈 Hangi kiracıya ait?
+    public Guid TenantId { get; set; } // Hangi kiracıya ait?
     public string Email { get; set; } = default!;
     public string UserName { get; set; } = default!;
 

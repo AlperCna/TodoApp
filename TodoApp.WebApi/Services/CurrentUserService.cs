@@ -3,6 +3,8 @@ using TodoApp.Application.Interfaces.Common;
 
 namespace TodoApp.WebApi.Services;
 
+using System.Security.Claims;
+
 public class CurrentUserService : ICurrentUserService
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
@@ -12,16 +14,15 @@ public class CurrentUserService : ICurrentUserService
         _httpContextAccessor = httpContextAccessor;
     }
 
-    // Token içindeki 'sub' (Subject) claim'ini okuyup Guid'e çeviriyoruz
     public Guid? UserId
     {
         get
         {
-            // HttpContext üzerinden NameIdentifier claim'ini çekiyoruz
             var id = _httpContextAccessor.HttpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
-
-            // Eğer id boşsa null, doluysa Guid'e çevirip döndürüyoruz
-            return string.IsNullOrEmpty(id) ? null : Guid.Parse(id);
+            return id != null ? Guid.Parse(id) : null;
         }
     }
+
+    // 🔑 YENİ: Token içindeki Role claim'ini okur
+    public string? Role => _httpContextAccessor.HttpContext?.User?.FindFirstValue(ClaimTypes.Role);
 }

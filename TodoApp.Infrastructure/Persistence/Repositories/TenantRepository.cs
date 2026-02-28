@@ -13,7 +13,7 @@ public class TenantRepository : ITenantRepository
         _context = context;
     }
 
-    // ✅ EKLEMEN GEREKEN METOD BURASI:
+    
     public async Task<List<Tenant>> GetAllAsync(CancellationToken ct = default)
     {
         // Kayıt ekranında tüm şirketleri listelemek için filtreyi kapatıyoruz

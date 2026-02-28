@@ -63,7 +63,7 @@ public class AuthService : IAuthService
 
         var hash = _hasher.HashPassword(request.Password, out var salt);
 
-        // ✅ Refresh Token Üretimi
+        // Refresh Token Üretimi
         var refreshToken = _jwt.GenerateRefreshToken();
 
         var user = new User
@@ -90,7 +90,7 @@ public class AuthService : IAuthService
             UserName: user.UserName,
             Email: user.Email,
             Token: token,
-            RefreshToken: refreshToken // ✅ Response'a eklendi
+            RefreshToken: refreshToken // Response'a eklendi
         );
     }
 
@@ -130,7 +130,7 @@ public class AuthService : IAuthService
         );
     }
 
-    // ✅ Yeni: Token Yenileme Mantığı
+    // Yeni: Token Yenileme Mantığı
     public async Task<AuthResponse> RefreshTokenAsync(RefreshTokenRequest request, CancellationToken ct = default)
     {
         // Kullanıcıyı Refresh Token üzerinden buluyoruz

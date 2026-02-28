@@ -40,7 +40,7 @@ public class UserRepository : IUserRepository
         await _context.SaveChangesAsync(ct);
     }
 
-    // ✅ YENI: Refresh Token ile arama
+    //  Refresh Token ile arama
     public async Task<User?> GetByRefreshTokenAsync(string refreshToken, CancellationToken ct = default)
     {
         return await _context.Users
