@@ -1,12 +1,13 @@
 ﻿using System.Text;
 using System.Reflection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using FluentValidation;
 using FluentValidation.AspNetCore;
-using Hangfire; // 👈 Hangfire için eklendi
+using Hangfire;
 using TodoApp.Application.Interfaces.Common;
 using TodoApp.Application.Interfaces.Persistence;
 using TodoApp.Application.Interfaces.Security;
@@ -18,6 +19,8 @@ using TodoApp.Infrastructure.Security;
 using TodoApp.WebApi.Services;
 using TodoApp.WebApi.Middlewares;
 using TodoApp.Infrastructure.Services;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication.MicrosoftAccount;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,12 +28,15 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// --- 2. GÜVENLİK VE JWT AYARLARI ---
+// --- 2. GÜVENLİK VE JWT + SSO (AZURE & GOOGLE) AYARLARI ---
 builder.Services.AddAuthentication(options =>
 {
+    // API talepleri varsayılan olarak JWT bekler
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    // Giriş (SignIn) işlemi SSO dönüşünde Cookie üzerinden geçici olarak yapılır
+    options.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
 })
+.AddCookie() // SSO sürecindeki geçici veri transferi için şart
 .AddJwtBearer(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters
@@ -44,6 +50,25 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["JwtSettings:Secret"]!)),
         ClockSkew = TimeSpan.Zero
     };
+})
+// Microsoft Enterprise SSO Yapılandırması (Stabil Sürüm)
+.AddMicrosoftAccount("Microsoft", options =>
+{
+    options.ClientId = builder.Configuration["AzureAd:ClientId"]!;
+    options.ClientSecret = builder.Configuration["AzureAd:ClientSecret"]!;
+
+    options.CallbackPath = builder.Configuration["AzureAd:CallbackPath"];
+
+    options.Scope.Add("openid");
+    // Kullanıcının e-posta iznini istiyoruz
+    options.Scope.Add("email");
+    options.Scope.Add("profile");
+})
+// Google SSO Yapılandırması
+.AddGoogle("Google", options =>
+{
+    options.ClientId = builder.Configuration["Google:ClientId"]!;
+    options.ClientSecret = builder.Configuration["Google:ClientSecret"]!;
 });
 
 builder.Services.AddAuthorization();
@@ -55,7 +80,8 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins("http://localhost:4200")
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowAnyHeader()
+              .AllowCredentials(); // SSO dönüşlerinde kimlik bilgilerine izin ver
     });
 });
 
@@ -63,18 +89,16 @@ builder.Services.AddCors(options =>
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<ITodoService>();
 
-// --- 5. HANGFIRE YAPILANDIRMASI (YENİ) ---
-// Hangfire'ın arka planda kendi tablolarını SQL Server'da oluşturması için gerekli servisler
+// --- 5. HANGFIRE YAPILANDIRMASI ---
 builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
     .UseRecommendedSerializerSettings()
     .UseSqlServerStorage(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Hangfire sunucusunu (arka plan işleme motoru) aktif et
 builder.Services.AddHangfireServer();
 
-// --- 6. DEPENDENCY INJECTION (Kabloları Bağlama) ---
+// --- 6. DEPENDENCY INJECTION ---
 builder.Services.AddHttpContextAccessor();
 
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
@@ -86,12 +110,8 @@ builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITodoRepository, TodoRepository>();
 builder.Services.AddScoped<ITodoService, TodoService>();
-
-// 📧 Mail Servisi (YENİ)
-builder.Services.AddScoped<IEmailService, EmailService>(); // 👈
-
-// ⏰ Hatırlatıcı Arka Plan İşi (YENİ)
-builder.Services.AddScoped<TodoReminderJob>(); // 👈 Bunu ekledik
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<TodoReminderJob>();
 
 builder.Services.AddControllers();
 
@@ -129,10 +149,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseMiddleware<ExceptionMiddleware>();
 
-// --- 9. HANGFIRE DASHBOARD (YENİ) ---
-// Hangfire panelini /hangfire adresinde aktif eder
+// --- 9. HANGFIRE DASHBOARD ---
 app.UseHangfireDashboard();
 
+// CSP (Content Security Policy) ayarı
 app.Use(async (context, next) =>
 {
     context.Response.Headers.Append("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';");
@@ -147,13 +167,10 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-// --- 10. RECURRING JOBS (TEKRARLAYAN İŞLER) ---
-// Uygulama her başladığında hatırlatıcı işini Hangfire kuyruğuna ekler/günceller
+// --- 10. RECURRING JOBS ---
 using (var scope = app.Services.CreateScope())
 {
     var recurringJobManager = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
-
-    // Her saat başı çalışacak şekilde ayarlandı
     recurringJobManager.AddOrUpdate<TodoReminderJob>(
         "todo-reminder-job",
         job => job.SendRemindersAsync(),

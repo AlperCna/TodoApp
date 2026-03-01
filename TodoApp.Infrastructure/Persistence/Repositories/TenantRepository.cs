@@ -13,7 +13,7 @@ public class TenantRepository : ITenantRepository
         _context = context;
     }
 
-    
+
     public async Task<List<Tenant>> GetAllAsync(CancellationToken ct = default)
     {
         // Kayıt ekranında tüm şirketleri listelemek için filtreyi kapatıyoruz
@@ -33,5 +33,13 @@ public class TenantRepository : ITenantRepository
     {
         await _context.Tenants.AddAsync(tenant, ct);
         await _context.SaveChangesAsync(ct);
+    }
+
+    // Yeni eklenen: Domain uzerinden sirketi bulmak icin
+    public async Task<Tenant?> GetByDomainAsync(string domain, CancellationToken ct = default)
+    {
+        return await _context.Tenants
+            .IgnoreQueryFilters() // Sistem genelinde alan adi eslesmesi aranmali
+            .FirstOrDefaultAsync(t => t.Domain == domain, ct);
     }
 }

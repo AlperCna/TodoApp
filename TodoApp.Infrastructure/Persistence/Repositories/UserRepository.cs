@@ -44,7 +44,7 @@ public class UserRepository : IUserRepository
     public async Task<User?> GetByRefreshTokenAsync(string refreshToken, CancellationToken ct = default)
     {
         return await _context.Users
-            .IgnoreQueryFilters() // 👈 Tenant kısıtlamasına takılmadan tüm sistemde ara
+            .IgnoreQueryFilters() // Tenant kısıtlamasına takılmadan tüm sistemde ara
             .FirstOrDefaultAsync(u => u.RefreshToken == refreshToken, ct);
     }
 
@@ -53,5 +53,13 @@ public class UserRepository : IUserRepository
     {
         _context.Users.Update(user);
         await _context.SaveChangesAsync(ct);
+    }
+
+    // Yeni eklenen: Dis kimlik bilgileri ile kullaniciyi bulmak icin
+    public async Task<User?> GetByExternalIdAsync(string externalId, string provider, CancellationToken ct = default)
+    {
+        return await _context.Users
+            .IgnoreQueryFilters() // Farkli tenantlardaki SSO gecmisini kontrol etmek icin filtreyi kapatiyoruz
+            .FirstOrDefaultAsync(u => u.ExternalId == externalId && u.ExternalProvider == provider, ct);
     }
 }

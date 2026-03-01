@@ -157,4 +157,64 @@ public class AuthService : IAuthService
             RefreshToken: newRefreshToken
         );
     }
+
+
+    public async Task<AuthResponse> HandleExternalLoginAsync(ExternalLoginDto request, CancellationToken ct = default)
+    {
+        // 1. Kullanıcı zaten kayıtlı mı? (Daha önce SSO ile girdi mi?)
+        var user = await _users.GetByExternalIdAsync(request.ExternalId, request.Provider, ct);
+
+        if (user == null)
+        {
+            // 🧠 Mülakatın Sırrı: Domain'den Tenant (Şirket) Bulma
+            var tenant = await _tenants.GetByDomainAsync(request.Domain, ct);
+
+            if (tenant == null)
+            {
+                // Şirket veritabanında kayıtlı değilse girişe izin vermiyoruz
+                throw new UnauthorizedAccessException($"'{request.Domain}' alan adı için kayıtlı bir şirket (Tenant) bulunamadı.");
+            }
+
+            // 2. Yeni kullanıcıyı oluştur (Tablo şemana tam uyumlu)
+            user = new User
+            {
+                Id = Guid.NewGuid(),
+                Email = request.Email,
+                UserName = request.Email.Split('@')[0], // 'alper.can' kısmını kullanıcı adı yapıyoruz
+                TenantId = tenant.Id, // 🏢 Otomatik Şirket Eşleşmesi
+                ExternalProvider = request.Provider,
+                ExternalId = request.ExternalId,
+                CreatedAt = DateTime.UtcNow,
+                Role = "User", // Varsayılan rol
+
+                // 🟢 SQL 'NOT NULL' Hatasını Önleyen Yer Tutucular:
+                // SSO kullanıcıları şifreyle girmediği için bu alanlara rastgele Guid atıyoruz
+                PasswordHash = "SSO_USER_" + Guid.NewGuid().ToString("N"),
+                PasswordSalt = Guid.NewGuid().ToString("N")
+            };
+
+            // Kullanıcıyı veritabanına kaydet
+            await _users.AddAsync(user, ct);
+        }
+
+        // 3. Tokenları Üret (JWT + Refresh Token)
+        // Bu aşamada kullanıcı ya yeni oluştu ya da zaten DB'den geldi
+        var accessToken = _jwt.CreateToken(user);
+        var refreshToken = _jwt.GenerateRefreshToken();
+
+        // 4. Veritabanını Refresh Token ile güncelle
+        user.RefreshToken = refreshToken;
+        user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
+
+        await _users.UpdateAsync(user, ct);
+
+        // 5. Angular tarafına gidecek olan ortak cevabı dön
+        return new AuthResponse(
+            Id: user.Id,
+            UserName: user.UserName,
+            Email: user.Email,
+            Token: accessToken,
+            RefreshToken: refreshToken
+        );
+    }
 }

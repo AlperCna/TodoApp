@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 using TodoApp.Domain.Entities;
+using static System.Net.WebRequestMethods;
 
 namespace TodoApp.Application.Interfaces.Persistence;
 
@@ -19,4 +20,7 @@ public interface IUserRepository
 
     // Kullanıcı bilgilerini (Tokenlar vb.) güncellemek için (Yeni eklendi)
     Task UpdateAsync(User user, CancellationToken ct = default);
+
+    ///Dış kimlik(Azure/Google ID) ile kullanıcıyı bulmak için
+    Task<User?> GetByExternalIdAsync(string externalId, string provider, CancellationToken ct = default);
 }

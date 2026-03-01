@@ -14,4 +14,7 @@ public interface IAuthService
     Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken ct = default);
 
     Task<AuthResponse> RefreshTokenAsync(RefreshTokenRequest request, CancellationToken ct = default);
+
+    //  SSO (Dış Kaynaklı) Giriş Metodu
+    Task<AuthResponse> HandleExternalLoginAsync(ExternalLoginDto request, CancellationToken ct = default);
 }
