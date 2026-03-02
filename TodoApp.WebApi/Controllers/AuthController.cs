@@ -51,6 +51,16 @@ public class AuthController : ControllerBase
         }
     }
 
+    [HttpPost("revoke")]
+    public async Task<IActionResult> Revoke([FromBody] string refreshToken, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(refreshToken)) return BadRequest("Token gerekli.");
+
+        await _authService.RevokeTokenAsync(refreshToken, ct);
+
+        return NoContent(); // 204 döner, işlem başarılı ama dönecek veri yok demek
+    }
+
     [HttpGet("tenants")]
     public async Task<IActionResult> GetTenants(CancellationToken ct)
     {

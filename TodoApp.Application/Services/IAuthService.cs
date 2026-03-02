@@ -17,4 +17,6 @@ public interface IAuthService
 
     //  SSO (Dış Kaynaklı) Giriş Metodu
     Task<AuthResponse> HandleExternalLoginAsync(ExternalLoginDto request, CancellationToken ct = default);
+
+    Task RevokeTokenAsync(string refreshToken, CancellationToken ct = default);
 }

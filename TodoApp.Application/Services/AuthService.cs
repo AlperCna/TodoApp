@@ -187,7 +187,7 @@ public class AuthService : IAuthService
                 CreatedAt = DateTime.UtcNow,
                 Role = "User", // Varsayılan rol
 
-                // 🟢 SQL 'NOT NULL' Hatasını Önleyen Yer Tutucular:
+                // SQL 'NOT NULL' Hatasını Önleyen Yer Tutucular:
                 // SSO kullanıcıları şifreyle girmediği için bu alanlara rastgele Guid atıyoruz
                 PasswordHash = "SSO_USER_" + Guid.NewGuid().ToString("N"),
                 PasswordSalt = Guid.NewGuid().ToString("N")
@@ -216,5 +216,21 @@ public class AuthService : IAuthService
             Token: accessToken,
             RefreshToken: refreshToken
         );
+    }
+
+    public async Task RevokeTokenAsync(string refreshToken, CancellationToken ct = default)
+    {
+        // Veritabanında bu refresh token'a sahip kullanıcıyı bul
+        var user = await _users.GetByRefreshTokenAsync(refreshToken, ct);
+
+        if (user != null)
+        {
+            // Revoke işlemi: Token'ı ve süresini null yaparak "öldürüyoruz"
+            user.RefreshToken = null;
+            user.RefreshTokenExpiryTime = null;
+
+            // Veritabanını güncelle
+            await _users.UpdateAsync(user, ct);
+        }
     }
 }
