@@ -23,4 +23,6 @@ public interface IUserRepository
 
     ///Dış kimlik(Azure/Google ID) ile kullanıcıyı bulmak için
     Task<User?> GetByExternalIdAsync(string externalId, string provider, CancellationToken ct = default);
+
+    Task<List<User>> GetAllAsync(CancellationToken ct = default);
 }

@@ -62,4 +62,12 @@ public class UserRepository : IUserRepository
             .IgnoreQueryFilters() // Farkli tenantlardaki SSO gecmisini kontrol etmek icin filtreyi kapatiyoruz
             .FirstOrDefaultAsync(u => u.ExternalId == externalId && u.ExternalProvider == provider, ct);
     }
+
+    public async Task<List<User>> GetAllAsync(CancellationToken ct = default)
+    {
+        // Veritabanı ile muhatap olan tek yer burası!
+        return await _context.Users
+            .AsNoTracking()
+            .ToListAsync(ct);
+    }
 }

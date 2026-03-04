@@ -21,6 +21,7 @@ using TodoApp.WebApi.Middlewares;
 using TodoApp.Infrastructure.Services;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.MicrosoftAccount;
+using TodoApp.Application.Services.Admin; // 
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -112,6 +113,7 @@ builder.Services.AddScoped<ITodoRepository, TodoRepository>();
 builder.Services.AddScoped<ITodoService, TodoService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<TodoReminderJob>();
+builder.Services.AddScoped<IAdminService, AdminService>();
 
 builder.Services.AddControllers();
 

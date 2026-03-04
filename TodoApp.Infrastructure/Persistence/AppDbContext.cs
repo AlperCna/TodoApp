@@ -27,10 +27,8 @@ public class AppDbContext : DbContext
         base.OnModelCreating(modelBuilder);
 
 
-        // Tüm ayarları bu assembly (proje) içinden otomatik yükler
-        // modelBuilder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly());
 
-        // Veya daha kontrollü olması için manuel ekleme:
+        
         modelBuilder.ApplyConfiguration(new TenantConfiguration());
         modelBuilder.ApplyConfiguration(new UserConfiguration(_currentTenantService));
         modelBuilder.ApplyConfiguration(new TodoItemConfiguration(_currentTenantService));

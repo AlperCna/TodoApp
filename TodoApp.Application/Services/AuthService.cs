@@ -166,7 +166,7 @@ public class AuthService : IAuthService
 
         if (user == null)
         {
-            // 🧠 Mülakatın Sırrı: Domain'den Tenant (Şirket) Bulma
+            // Domain'den Tenant (Şirket) Bulma
             var tenant = await _tenants.GetByDomainAsync(request.Domain, ct);
 
             if (tenant == null)
