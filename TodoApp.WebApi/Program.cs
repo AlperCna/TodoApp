@@ -13,6 +13,7 @@ using TodoApp.Application.Interfaces.Persistence;
 using TodoApp.Application.Interfaces.Security;
 using TodoApp.Application.Services.Auth;
 using TodoApp.Application.Services.Todo;
+using TodoApp.Application.Services.Admin;
 using TodoApp.Infrastructure.Persistence;
 using TodoApp.Infrastructure.Persistence.Repositories;
 using TodoApp.Infrastructure.Security;
@@ -21,23 +22,31 @@ using TodoApp.WebApi.Middlewares;
 using TodoApp.Infrastructure.Services;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.MicrosoftAccount;
-using TodoApp.Application.Services.Admin; // 
 
 var builder = WebApplication.CreateBuilder(args);
 
 // --- 1. VERİTABANI BAĞLANTISI (EF CORE) ---
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+  options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// ✅ EKLEME: SSO Correlation Hatasını Önlemek İçin Çerez Politikası
+builder.Services.Configure<CookiePolicyOptions>(options =>
+{
+    options.MinimumSameSitePolicy = SameSiteMode.Unspecified;
+    options.CheckConsentNeeded = context => true;
+});
 
 // --- 2. GÜVENLİK VE JWT + SSO (AZURE & GOOGLE) AYARLARI ---
 builder.Services.AddAuthentication(options =>
 {
-    // API talepleri varsayılan olarak JWT bekler
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    // Giriş (SignIn) işlemi SSO dönüşünde Cookie üzerinden geçici olarak yapılır
     options.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
 })
-.AddCookie() // SSO sürecindeki geçici veri transferi için şart
+.AddCookie(options =>
+{
+    options.Cookie.SameSite = SameSiteMode.None;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+})
 .AddJwtBearer(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters
@@ -52,20 +61,15 @@ builder.Services.AddAuthentication(options =>
         ClockSkew = TimeSpan.Zero
     };
 })
-// Microsoft Enterprise SSO Yapılandırması (Stabil Sürüm)
 .AddMicrosoftAccount("Microsoft", options =>
 {
     options.ClientId = builder.Configuration["AzureAd:ClientId"]!;
     options.ClientSecret = builder.Configuration["AzureAd:ClientSecret"]!;
-
     options.CallbackPath = builder.Configuration["AzureAd:CallbackPath"];
-
     options.Scope.Add("openid");
-    // Kullanıcının e-posta iznini istiyoruz
     options.Scope.Add("email");
     options.Scope.Add("profile");
 })
-// Google SSO Yapılandırması
 .AddGoogle("Google", options =>
 {
     options.ClientId = builder.Configuration["Google:ClientId"]!;
@@ -80,9 +84,9 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowAngular", policy =>
     {
         policy.WithOrigins("http://localhost:4200")
-              .AllowAnyMethod()
-              .AllowAnyHeader()
-              .AllowCredentials(); // SSO dönüşlerinde kimlik bilgilerine izin ver
+           .AllowAnyMethod()
+           .AllowAnyHeader()
+           .AllowCredentials();
     });
 });
 
@@ -92,16 +96,15 @@ builder.Services.AddValidatorsFromAssemblyContaining<ITodoService>();
 
 // --- 5. HANGFIRE YAPILANDIRMASI ---
 builder.Services.AddHangfire(config => config
-    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
-    .UseSimpleAssemblyNameTypeSerializer()
-    .UseRecommendedSerializerSettings()
-    .UseSqlServerStorage(builder.Configuration.GetConnectionString("DefaultConnection")));
+  .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+  .UseSimpleAssemblyNameTypeSerializer()
+  .UseRecommendedSerializerSettings()
+  .UseSqlServerStorage(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddHangfireServer();
 
 // --- 6. DEPENDENCY INJECTION ---
 builder.Services.AddHttpContextAccessor();
-
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<ICurrentTenantService, CurrentTenantService>();
 builder.Services.AddScoped<ITenantRepository, TenantRepository>();
@@ -117,7 +120,7 @@ builder.Services.AddScoped<IAdminService, AdminService>();
 
 builder.Services.AddControllers();
 
-// --- 7. SWAGGER AYARLARI (JWT DESTEKLİ) ---
+// --- 7. SWAGGER AYARLARI (✅ DÜZELTİLDİ) ---
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -130,14 +133,18 @@ builder.Services.AddSwaggerGen(c =>
         Type = SecuritySchemeType.ApiKey,
         Scheme = "Bearer"
     });
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+
+    // ✨ Buradaki parantez hatasını düzelttik:
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+  {
     {
-        {
-            new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" } },
-            Array.Empty<string>()
-        }
+      new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+            },
+      Array.Empty<string>()
     }
-    );
+  });
 });
 
 var app = builder.Build();
@@ -150,11 +157,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseMiddleware<ExceptionMiddleware>();
-
-// --- 9. HANGFIRE DASHBOARD ---
 app.UseHangfireDashboard();
 
-// CSP (Content Security Policy) ayarı
+// CSP Ayarı
 app.Use(async (context, next) =>
 {
     context.Response.Headers.Append("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';");
@@ -162,6 +167,10 @@ app.Use(async (context, next) =>
 });
 
 app.UseHttpsRedirection();
+
+// ✅ EKLEME: Çerez politikasını devreye al (Authentication'dan önce olmalı)
+app.UseCookiePolicy();
+
 app.UseCors("AllowAngular");
 
 app.UseAuthentication();
@@ -174,9 +183,9 @@ using (var scope = app.Services.CreateScope())
 {
     var recurringJobManager = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
     recurringJobManager.AddOrUpdate<TodoReminderJob>(
-        "todo-reminder-job",
-        job => job.SendRemindersAsync(),
-        Cron.Hourly);
+      "todo-reminder-job",
+      job => job.SendRemindersAsync(),
+      Cron.Hourly);
 }
 
 app.Run();

@@ -1,8 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 using TodoApp.Application.DTOs.Auth;
 using TodoApp.Application.Interfaces.Persistence;
 using TodoApp.Application.Interfaces.Security;
@@ -16,17 +17,20 @@ public class AuthService : IAuthService
     private readonly ITenantRepository _tenants;
     private readonly IPasswordHasher _hasher;
     private readonly IJwtTokenService _jwt;
+    private readonly IHttpContextAccessor _httpContextAccessor; // IP takibi için eklendi
 
     public AuthService(
         IUserRepository users,
         ITenantRepository tenants,
         IPasswordHasher hasher,
-        IJwtTokenService jwt)
+        IJwtTokenService jwt,
+        IHttpContextAccessor httpContextAccessor)
     {
         _users = users;
         _tenants = tenants;
         _hasher = hasher;
         _jwt = jwt;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken ct = default)
@@ -63,9 +67,6 @@ public class AuthService : IAuthService
 
         var hash = _hasher.HashPassword(request.Password, out var salt);
 
-        // Refresh Token Üretimi
-        var refreshToken = _jwt.GenerateRefreshToken();
-
         var user = new User
         {
             Id = Guid.NewGuid(),
@@ -75,13 +76,25 @@ public class AuthService : IAuthService
             PasswordHash = hash,
             PasswordSalt = salt,
             Role = "User",
-            CreatedAt = DateTime.UtcNow,
-            // ✅ Veritabanına yeni kolonları yazıyoruz
-            RefreshToken = refreshToken,
-            RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7) // 7 Günlük yedek anahtar
+            CreatedAt = DateTime.UtcNow
         };
 
         await _users.AddAsync(user, ct);
+
+        // ✅ Yeni Tablo Mantığı: Refresh Token Üretimi ve Kaydı
+        var refreshTokenStr = _jwt.GenerateRefreshToken();
+        var userRefreshToken = new UserRefreshToken
+        {
+            Id = Guid.NewGuid(),
+            Token = refreshTokenStr,
+            ExpiryTime = DateTime.UtcNow.AddDays(7),
+            UserId = user.Id,
+            CreatedAt = DateTime.UtcNow,
+            CreatedByIp = _httpContextAccessor.HttpContext?.Connection?.RemoteIpAddress?.ToString(),
+            IsRevoked = false
+        };
+
+        await _users.AddRefreshTokenAsync(userRefreshToken, ct);
 
         var token = _jwt.CreateToken(user);
 
@@ -90,7 +103,7 @@ public class AuthService : IAuthService
             UserName: user.UserName,
             Email: user.Email,
             Token: token,
-            RefreshToken: refreshToken // Response'a eklendi
+            RefreshToken: refreshTokenStr // Response'a eklendi
         );
     }
 
@@ -108,129 +121,150 @@ public class AuthService : IAuthService
         if (user is null)
             throw new UnauthorizedAccessException("Email veya şifre hatalı.");
 
-        var ok = _hasher.VerifyPassword(request.Password, user.PasswordHash, user.PasswordSalt);
+        var ok = _hasher.VerifyPassword(request.Password, user.PasswordHash!, user.PasswordSalt!);
         if (!ok)
             throw new UnauthorizedAccessException("Email veya şifre hatalı.");
 
         // ✅ Login anında hem Access hem Refresh Token yenilenir
         var token = _jwt.CreateToken(user);
-        var refreshToken = _jwt.GenerateRefreshToken();
+        var refreshTokenStr = _jwt.GenerateRefreshToken();
 
-        // ✅ DB Güncelleme
-        user.RefreshToken = refreshToken;
-        user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
-        await _users.UpdateAsync(user, ct);
+        // ✅ Yeni Tabloya Kayıt (Eskileri silmiyoruz, geçmiş tutuyoruz)
+        var userRefreshToken = new UserRefreshToken
+        {
+            Id = Guid.NewGuid(),
+            Token = refreshTokenStr,
+            ExpiryTime = DateTime.UtcNow.AddDays(7),
+            UserId = user.Id,
+            CreatedAt = DateTime.UtcNow,
+            CreatedByIp = _httpContextAccessor.HttpContext?.Connection?.RemoteIpAddress?.ToString()
+        };
+
+        await _users.AddRefreshTokenAsync(userRefreshToken, ct);
 
         return new AuthResponse(
             Id: user.Id,
             UserName: user.UserName,
             Email: user.Email,
             Token: token,
-            RefreshToken: refreshToken
+            RefreshToken: refreshTokenStr
         );
     }
 
-    // Yeni: Token Yenileme Mantığı
+    // Yeni: Token Yenileme Mantığı (Ayrı Tabloya Göre)
     public async Task<AuthResponse> RefreshTokenAsync(RefreshTokenRequest request, CancellationToken ct = default)
     {
-        // Kullanıcıyı Refresh Token üzerinden buluyoruz
-        var user = await _users.GetByRefreshTokenAsync(request.RefreshToken, ct);
+        // ✅ Yeni: Refresh Token'ı kendi tablosundan, User ile birlikte buluyoruz
+        var storedToken = await _users.GetRefreshTokenAsync(request.RefreshToken, ct);
 
-        if (user == null || user.RefreshTokenExpiryTime <= DateTime.UtcNow)
+        if (storedToken == null || !storedToken.IsActive)
         {
             throw new UnauthorizedAccessException("Oturum süresi dolmuş veya geçersiz anahtar.");
         }
 
-        // Token Rotation: Her yenilemede yeni bir Refresh Token veriyoruz (Güvenlik için)
-        var newAccessToken = _jwt.CreateToken(user);
-        var newRefreshToken = _jwt.GenerateRefreshToken();
+        // ✅ Token Rotation: Eski tokenı iptal et
+        storedToken.IsRevoked = true;
+        storedToken.RevokedAt = DateTime.UtcNow;
+        await _users.UpdateRefreshTokenAsync(storedToken, ct);
 
-        user.RefreshToken = newRefreshToken;
-        user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
-        await _users.UpdateAsync(user, ct);
+        // Yeni tokenları üret
+        var user = storedToken.User;
+        var newAccessToken = _jwt.CreateToken(user);
+        var newRefreshTokenStr = _jwt.GenerateRefreshToken();
+
+        // ✅ Yeni tokenı tabloya kaydet
+        var newUserRefreshToken = new UserRefreshToken
+        {
+            Id = Guid.NewGuid(),
+            Token = newRefreshTokenStr,
+            ExpiryTime = DateTime.UtcNow.AddDays(7),
+            UserId = user.Id,
+            CreatedAt = DateTime.UtcNow,
+            CreatedByIp = _httpContextAccessor.HttpContext?.Connection?.RemoteIpAddress?.ToString()
+        };
+
+        await _users.AddRefreshTokenAsync(newUserRefreshToken, ct);
 
         return new AuthResponse(
             Id: user.Id,
             UserName: user.UserName,
             Email: user.Email,
             Token: newAccessToken,
-            RefreshToken: newRefreshToken
+            RefreshToken: newRefreshTokenStr
         );
     }
 
-
     public async Task<AuthResponse> HandleExternalLoginAsync(ExternalLoginDto request, CancellationToken ct = default)
     {
-        // 1. Kullanıcı zaten kayıtlı mı? (Daha önce SSO ile girdi mi?)
+        // 1. Kullanıcı zaten kayıtlı mı?
         var user = await _users.GetByExternalIdAsync(request.ExternalId, request.Provider, ct);
 
         if (user == null)
         {
-            // Domain'den Tenant (Şirket) Bulma
             var tenant = await _tenants.GetByDomainAsync(request.Domain, ct);
 
             if (tenant == null)
             {
-                // Şirket veritabanında kayıtlı değilse girişe izin vermiyoruz
                 throw new UnauthorizedAccessException($"'{request.Domain}' alan adı için kayıtlı bir şirket (Tenant) bulunamadı.");
             }
 
-            // 2. Yeni kullanıcıyı oluştur (Tablo şemana tam uyumlu)
             user = new User
             {
                 Id = Guid.NewGuid(),
                 Email = request.Email,
-                UserName = request.Email.Split('@')[0], // 'alper.can' kısmını kullanıcı adı yapıyoruz
-                TenantId = tenant.Id, // 🏢 Otomatik Şirket Eşleşmesi
+                UserName = request.Email.Split('@')[0],
+                TenantId = tenant.Id,
                 ExternalProvider = request.Provider,
                 ExternalId = request.ExternalId,
                 CreatedAt = DateTime.UtcNow,
-                Role = "User", // Varsayılan rol
-
-                // SQL 'NOT NULL' Hatasını Önleyen Yer Tutucular:
-                // SSO kullanıcıları şifreyle girmediği için bu alanlara rastgele Guid atıyoruz
+                Role = "User",
                 PasswordHash = "SSO_USER_" + Guid.NewGuid().ToString("N"),
                 PasswordSalt = Guid.NewGuid().ToString("N")
             };
 
-            // Kullanıcıyı veritabanına kaydet
             await _users.AddAsync(user, ct);
         }
 
-        // 3. Tokenları Üret (JWT + Refresh Token)
-        // Bu aşamada kullanıcı ya yeni oluştu ya da zaten DB'den geldi
+        // 3. Tokenları Üret
         var accessToken = _jwt.CreateToken(user);
-        var refreshToken = _jwt.GenerateRefreshToken();
+        var refreshTokenStr = _jwt.GenerateRefreshToken();
 
-        // 4. Veritabanını Refresh Token ile güncelle
-        user.RefreshToken = refreshToken;
-        user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
+        // ✅ 4. Yeni Tabloya Refresh Token Kaydı
+        var userRefreshToken = new UserRefreshToken
+        {
+            Id = Guid.NewGuid(),
+            Token = refreshTokenStr,
+            ExpiryTime = DateTime.UtcNow.AddDays(7),
+            UserId = user.Id,
+            CreatedAt = DateTime.UtcNow,
+            CreatedByIp = _httpContextAccessor.HttpContext?.Connection?.RemoteIpAddress?.ToString()
 
-        await _users.UpdateAsync(user, ct);
 
-        // 5. Angular tarafına gidecek olan ortak cevabı dön
+        };
+
+        await _users.AddRefreshTokenAsync(userRefreshToken, ct);
+
         return new AuthResponse(
             Id: user.Id,
             UserName: user.UserName,
             Email: user.Email,
             Token: accessToken,
-            RefreshToken: refreshToken
+            RefreshToken: refreshTokenStr
         );
     }
 
     public async Task RevokeTokenAsync(string refreshToken, CancellationToken ct = default)
     {
-        // Veritabanında bu refresh token'a sahip kullanıcıyı bul
-        var user = await _users.GetByRefreshTokenAsync(refreshToken, ct);
+        // ✅ Yeni: Tablodan tokenı bul
+        var storedToken = await _users.GetRefreshTokenAsync(refreshToken, ct);
 
-        if (user != null)
+        if (storedToken != null)
         {
-            // Revoke işlemi: Token'ı ve süresini null yaparak "öldürüyoruz"
-            user.RefreshToken = null;
-            user.RefreshTokenExpiryTime = null;
+            // Revoke işlemi: Sadece bu tokenı "öldürüyoruz"
+            storedToken.IsRevoked = true;
+            storedToken.RevokedAt = DateTime.UtcNow;
 
-            // Veritabanını güncelle
-            await _users.UpdateAsync(user, ct);
+            await _users.UpdateRefreshTokenAsync(storedToken, ct);
         }
     }
 }

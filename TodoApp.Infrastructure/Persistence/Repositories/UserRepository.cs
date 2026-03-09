@@ -1,9 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
-
 using Microsoft.EntityFrameworkCore;
 using TodoApp.Application.Interfaces.Persistence;
 using TodoApp.Domain.Entities;
@@ -40,34 +39,63 @@ public class UserRepository : IUserRepository
         await _context.SaveChangesAsync(ct);
     }
 
-    //  Refresh Token ile arama
-    public async Task<User?> GetByRefreshTokenAsync(string refreshToken, CancellationToken ct = default)
-    {
-        return await _context.Users
-            .IgnoreQueryFilters() // Tenant kısıtlamasına takılmadan tüm sistemde ara
-            .FirstOrDefaultAsync(u => u.RefreshToken == refreshToken, ct);
-    }
-
-    // ✅ YENI: Kullanıcıyı (Refresh Token alanlarını) güncelleme
     public async Task UpdateAsync(User user, CancellationToken ct = default)
     {
         _context.Users.Update(user);
         await _context.SaveChangesAsync(ct);
     }
 
-    // Yeni eklenen: Dis kimlik bilgileri ile kullaniciyi bulmak icin
     public async Task<User?> GetByExternalIdAsync(string externalId, string provider, CancellationToken ct = default)
     {
         return await _context.Users
-            .IgnoreQueryFilters() // Farkli tenantlardaki SSO gecmisini kontrol etmek icin filtreyi kapatiyoruz
+            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.ExternalId == externalId && u.ExternalProvider == provider, ct);
     }
 
     public async Task<List<User>> GetAllAsync(CancellationToken ct = default)
     {
-        // Veritabanı ile muhatap olan tek yer burası!
         return await _context.Users
             .AsNoTracking()
             .ToListAsync(ct);
+    }
+
+    // --- YENİ REFRESH TOKEN TABLO METODLARI ---
+
+    public async Task AddRefreshTokenAsync(UserRefreshToken token, CancellationToken ct = default)
+    {
+        await _context.UserRefreshTokens.AddAsync(token, ct);
+        await _context.SaveChangesAsync(ct);
+    }
+
+    public async Task<UserRefreshToken?> GetRefreshTokenAsync(string token, CancellationToken ct = default)
+    {
+        // ÖNEMLİ: Token kontrolü yaparken .Include(u => u.User) kullanarak 
+        // kullanıcı bilgilerini de tek seferde çekiyoruz (Eager Loading).
+        return await _context.UserRefreshTokens
+            .IgnoreQueryFilters() // Güvenlik kontrolü olduğu için tenant filtresini geçiyoruz
+            .Include(u => u.User)
+            .FirstOrDefaultAsync(t => t.Token == token, ct);
+    }
+
+    public async Task UpdateRefreshTokenAsync(UserRefreshToken token, CancellationToken ct = default)
+    {
+        _context.UserRefreshTokens.Update(token);
+        await _context.SaveChangesAsync(ct);
+    }
+
+    public async Task RevokeAllUserTokensAsync(Guid userId, CancellationToken ct = default)
+    {
+        // Kullanıcının sistemdeki tüm aktif/geçerli tokenlarını bul ve iptal et
+        var activeTokens = await _context.UserRefreshTokens
+            .Where(t => t.UserId == userId && !t.IsRevoked)
+            .ToListAsync(ct);
+
+        foreach (var token in activeTokens)
+        {
+            token.IsRevoked = true;
+            token.RevokedAt = DateTime.UtcNow;
+        }
+
+        await _context.SaveChangesAsync(ct);
     }
 }

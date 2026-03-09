@@ -21,9 +21,7 @@ public class User : BaseEntity, ITenantEntity
     public string? Address { get; set; }
     public string Role { get; set; } = "User";
 
-    public string? RefreshToken { get; set; }
-    public DateTime? RefreshTokenExpiryTime { get; set; }
-
+    
     // Navigation
     public Tenant? Tenant { get; set; }
     public ICollection<TodoItem> TodoItems { get; set; } = new List<TodoItem>();
