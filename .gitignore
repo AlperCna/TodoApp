@@ -361,3 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# Secrets - gercek degerler local'de tutulsun, repoya commit edilmesin
+appsettings.secrets.json
+appsettings.Production.json
+appsettings.Local.json
